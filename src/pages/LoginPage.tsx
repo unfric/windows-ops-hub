@@ -17,6 +17,11 @@ const LoginPage = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isSignUp && !email.endsWith("@mywindow.co.in")) {
+      toast.error("Please use your official @mywindow.co.in email address.");
+      return;
+    }
     setLoading(true);
 
     if (isSignUp) {
@@ -39,9 +44,9 @@ const LoginPage = () => {
     <div className="relative min-h-screen flex items-center justify-center p-6 overflow-hidden bg-[#050505] selection:bg-primary/30 selection:text-white">
       {/* Immersive Deep-Field Background */}
       <div className="absolute inset-0 z-0">
-        <img 
-          src="/auth-bg.png" 
-          alt="Luxury Architecture" 
+        <img
+          src="/auth-bg.png"
+          alt="Luxury Architecture"
           className="w-full h-full object-cover opacity-50 scale-110 animate-[pulse_10s_infinite_alternate]"
         />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(0,0,0,0)_0%,rgba(0,0,0,1)_100%)]" />
@@ -51,7 +56,7 @@ const LoginPage = () => {
       {/* Kinetic Light Elements */}
       <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-primary/15 rounded-full blur-[160px] z-0 animate-[pulse_8s_infinite]" />
       <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] bg-blue-500/5 rounded-full blur-[160px] z-0 animate-[pulse_12s_infinite]" />
-      
+
       {/* Scanning Line Effect */}
       <div className="absolute inset-0 z-0 pointer-events-none opacity-10">
         <div className="w-full h-[1px] bg-primary/50 absolute animate-[scan_4s_linear_infinite]" />
@@ -59,7 +64,7 @@ const LoginPage = () => {
 
       {/* Main Orchestrator Container */}
       <div className="relative z-10 w-full max-w-7xl lg:grid lg:grid-cols-2 gap-16 items-center">
-        
+
         {/* Left Side: Ethereal Branding */}
         <div className="hidden lg:flex flex-col justify-center space-y-12 text-white p-12 pr-0 border-r border-white/5">
           <div className="flex items-center gap-6">
@@ -107,7 +112,7 @@ const LoginPage = () => {
           <div className="relative w-full max-w-[520px]">
             {/* Form Glow */}
             <div className="absolute -inset-4 bg-primary/10 blur-[80px] rounded-[60px] opacity-50 z-0" />
-            
+
             <Card className="relative z-10 w-full bg-black/40 backdrop-blur-[60px] border border-white/10 shadow-[0_48px_128px_-12px_rgba(0,0,0,0.8)] rounded-[48px] overflow-hidden">
               <CardContent className="p-12 lg:p-16 space-y-10">
                 {/* Mobile Branding (Refined) */}
@@ -131,26 +136,26 @@ const LoginPage = () => {
                   {isSignUp && (
                     <div className="space-y-2.5 group">
                       <Label htmlFor="name" className="text-[10px] font-black uppercase text-white/20 tracking-[0.4em] ml-1 group-focus-within:text-primary transition-all duration-500">Commander ID</Label>
-                      <Input 
-                        id="name" 
-                        placeholder="IDENTIFY" 
+                      <Input
+                        id="name"
+                        placeholder="IDENTIFY"
                         className="bg-white/[0.03] border-white/5 h-16 rounded-[20px] text-white placeholder:text-white/10 focus:ring-primary/40 focus:border-primary/50 focus:bg-white/[0.06] transition-all duration-500 text-lg px-8 shadow-inner font-bold tracking-tight"
-                        value={name} 
-                        onChange={(e) => setName(e.target.value)} 
-                        required 
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        required
                       />
                     </div>
                   )}
                   <div className="space-y-2.5 group">
                     <Label htmlFor="email" className="text-[10px] font-black uppercase text-white/20 tracking-[0.4em] ml-1 group-focus-within:text-primary transition-all duration-500">Secure Protocol Email</Label>
-                    <Input 
-                      id="email" 
-                      type="email" 
-                      placeholder="nexus@link.io" 
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="nexus@link.io"
                       className="bg-white/[0.03] border-white/5 h-16 rounded-[20px] text-white placeholder:text-white/10 focus:ring-primary/40 focus:border-primary/50 focus:bg-white/[0.06] transition-all duration-500 text-lg px-8 shadow-inner font-bold tracking-tight"
-                      value={email} 
-                      onChange={(e) => setEmail(e.target.value)} 
-                      required 
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
                     />
                   </div>
                   <div className="space-y-2.5 group">
@@ -160,20 +165,20 @@ const LoginPage = () => {
                         <button type="button" className="text-[10px] font-black uppercase text-primary/40 hover:text-primary tracking-[0.3em] transition-all">RECOVER</button>
                       )}
                     </div>
-                    <Input 
-                      id="password" 
-                      type="password" 
-                      placeholder="••••••••" 
+                    <Input
+                      id="password"
+                      type="password"
+                      placeholder="••••••••"
                       className="bg-white/[0.03] border-white/5 h-16 rounded-[20px] text-white placeholder:text-white/10 focus:ring-primary/40 focus:border-primary/50 focus:bg-white/[0.06] transition-all duration-500 text-lg px-8 shadow-inner font-bold tracking-tight"
-                      value={password} 
-                      onChange={(e) => setPassword(e.target.value)} 
-                      required 
-                      minLength={6} 
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      minLength={6}
                     />
                   </div>
-                  <Button 
-                    type="submit" 
-                    className="w-full h-20 bg-primary hover:bg-primary/90 text-white text-xl font-black uppercase tracking-[0.3em] rounded-[24px] shadow-[0_12px_48px_rgba(var(--primary),0.3)] transition-all active:scale-[0.97] mt-6 flex items-center justify-center gap-3 overflow-hidden group" 
+                  <Button
+                    type="submit"
+                    className="w-full h-20 bg-primary hover:bg-primary/90 text-white text-xl font-black uppercase tracking-[0.3em] rounded-[24px] shadow-[0_12px_48px_rgba(var(--primary),0.3)] transition-all active:scale-[0.97] mt-6 flex items-center justify-center gap-3 overflow-hidden group"
                     disabled={loading}
                   >
                     {loading ? (
@@ -190,9 +195,9 @@ const LoginPage = () => {
                 <div className="pt-10 text-center border-t border-white/10">
                   <p className="text-sm font-bold tracking-tight text-white/20 uppercase">
                     {isSignUp ? "Already bridged?" : "New operative?"}{" "}
-                    <button 
-                      type="button" 
-                      className="text-primary font-black ml-2 hover:text-white transition-colors underline-offset-4 hover:underline" 
+                    <button
+                      type="button"
+                      className="text-primary font-black ml-2 hover:text-white transition-colors underline-offset-4 hover:underline"
                       onClick={() => setIsSignUp(!isSignUp)}
                     >
                       {isSignUp ? "CONNECT" : "REQUEST LINK"}
@@ -206,7 +211,8 @@ const LoginPage = () => {
 
       </div>
 
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         @keyframes scan {
           from { top: 0; }
           to { top: 100%; }

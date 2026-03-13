@@ -314,6 +314,11 @@ SECURITY DEFINER
 SET search_path TO 'public'
 AS $$
 BEGIN
+  -- Check for specific domain
+  IF NEW.email NOT LIKE '%@mywindow.co.in' THEN
+    RAISE EXCEPTION 'Registration restricted to @mywindow.co.in domain';
+  END IF;
+
   INSERT INTO public.profiles (user_id, name, email, status, joined_at)
   VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'name', ''), NEW.email, 'active', now())
   ON CONFLICT (user_id) DO UPDATE SET
