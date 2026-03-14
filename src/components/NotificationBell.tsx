@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import { useAuth } from "@/hooks/useAuth";
 import { Bell, Check, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useNavigate } from "react-router-dom";
 
-interface Notification {
+interface AppNotification {
   id: string;
   title: string;
   message: string;
@@ -22,25 +23,24 @@ interface Notification {
 
 export default function NotificationBell() {
   const { user } = useAuth();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
 
   const fetchNotifications = async () => {
     if (!user) return;
-    const { data } = await (supabase
-      .from("notifications" as any)
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(30) as any);
-    setNotifications((data as Notification[]) || []);
+    try {
+      const data = await api.notifications.list();
+      setNotifications(data.notifications || []);
+    } catch (err) {
+      console.error("Failed to fetch notifications:", err);
+    }
   };
 
   useEffect(() => {
     fetchNotifications();
 
-    // Realtime subscription
+    // Realtime subscription (Still needed for live updates)
     const channel = supabase
       .channel("user-notifications")
       .on(
@@ -48,7 +48,7 @@ export default function NotificationBell() {
         { event: "INSERT", schema: "public", table: "notifications" },
         (payload: any) => {
           if (payload.new.user_id === user?.id) {
-            setNotifications((prev) => [payload.new as Notification, ...prev]);
+            setNotifications((prev) => [payload.new as AppNotification, ...prev]);
           }
         }
       )
@@ -60,15 +60,21 @@ export default function NotificationBell() {
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   const markRead = async (id: string) => {
-    await (supabase.from("notifications" as any) as any).update({ read: true }).eq("id", id);
-    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
+    try {
+      await api.notifications.markRead(id);
+      setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
+    } catch (err) {
+      console.error("Failed to mark notification as read:", err);
+    }
   };
 
   const markAllRead = async () => {
-    const unreadIds = notifications.filter((n) => !n.read).map((n) => n.id);
-    if (unreadIds.length === 0) return;
-    await (supabase.from("notifications" as any) as any).update({ read: true }).in("id", unreadIds);
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    try {
+      await api.notifications.markAllRead();
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    } catch (err) {
+      console.error("Failed to mark all notifications as read:", err);
+    }
   };
 
   const typeColor = (type: string) => {

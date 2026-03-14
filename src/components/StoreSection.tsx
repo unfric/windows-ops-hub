@@ -1,12 +1,11 @@
 import { useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { logActivity } from "@/lib/activityLog";
 
 const AVAILABILITY_VALUES = ["Pending PO", "PO Placed", "Partially Available", "In Stock / Available", "Not Required"];
 const COATING_VALUES = ["Pending Coating", "Sent to Coating", "Partially Available", "In Stock / Available", "Not Required"];
@@ -28,34 +27,29 @@ interface StoreSectionProps {
 import { cn } from "@/lib/utils";
 
 export default function StoreSection({ orderId, order, onRefresh, readOnly }: StoreSectionProps) {
-  const updateField = async (field: string, value: string) => {
-    if (readOnly) return;
-    const oldValue = order[field];
-    if (String(oldValue ?? "") === String(value ?? "")) return;
+  const updateField = async (field: string, value: any) => {
+    try {
+      // 1. Update main field
+      await api.orders.updateField(orderId, field, value, "Store");
 
-    const updates: Record<string, any> = { [field]: value };
+      // 2. Unified Auto-sync to Procurement if necessary
+      const procurementFieldMap: Record<string, string> = {
+        hardware_availability: "hardware_po_status",
+        extrusion_availability: "extrusion_po_status",
+        glass_availability: "glass_po_status",
+        coated_extrusion_availability: "coating_status",
+      };
 
-    // Unified Auto-sync: 
-    // Since Store and Procurement now share the exact same values,
-    // whatever Store sets here is pushed exactly to Procurement.
-    const procurementFieldMap: Record<string, string> = {
-      hardware_availability: "hardware_po_status",
-      extrusion_availability: "extrusion_po_status",
-      glass_availability: "glass_po_status",
-      coated_extrusion_availability: "coating_status",
-    };
+      const poField = procurementFieldMap[field];
+      if (poField && order[poField] !== value) {
+        await api.orders.updateField(orderId, poField, value, "Store -> Procurement AutoSync");
+      }
 
-    const poField = procurementFieldMap[field];
-    if (poField && order[poField] !== value) {
-      updates[poField] = value;
-      await logActivity({ orderId, module: "Store -> Procurement AutoSync", fieldName: poField, oldValue: String(order[poField] ?? ""), newValue: value });
+      toast.success("Updated");
+      onRefresh();
+    } catch (error: any) {
+      toast.error(error.message);
     }
-
-    const { error } = await supabase.from("orders").update(updates as any).eq("id", orderId);
-    if (error) { toast.error(error.message); return; }
-    await logActivity({ orderId, module: "Store", fieldName: field, oldValue: String(oldValue ?? ""), newValue: value });
-    toast.success("Updated");
-    onRefresh();
   };
 
   return (

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -17,23 +17,27 @@ export default function InstallationPage() {
 
   useEffect(() => {
     const fetch = async () => {
-      const [oRes, iRes, dRes] = await Promise.all([
-        supabase.from("orders").select("*").order("created_at", { ascending: false }),
-        (supabase.from("installation_logs" as any) as any).select("order_id, windows_installed"),
-        (supabase.from("dispatch_logs" as any) as any).select("order_id, windows_dispatched"),
-      ]);
-      if (oRes.error) { toast.error("Failed to load orders"); return; }
-      setOrders(oRes.data || []);
+      try {
+        const data = await api.orders.list();
+        if (!data.orders) { setLoading(false); return; }
+        setOrders(data.orders || []);
 
-      const im: Record<string, number> = {};
-      (iRes.data || []).forEach((l: any) => { im[l.order_id] = (im[l.order_id] || 0) + l.windows_installed; });
-      setInstallMap(im);
+        const im: Record<string, number> = {};
+        (data.installation_logs || []).forEach((l: any) => { 
+          im[l.order_id] = (im[l.order_id] || 0) + l.windows_installed; 
+        });
+        setInstallMap(im);
 
-      const dm: Record<string, number> = {};
-      (dRes.data || []).forEach((l: any) => { dm[l.order_id] = (dm[l.order_id] || 0) + l.windows_dispatched; });
-      setDispatchMap(dm);
-
-      setLoading(false);
+        const dm: Record<string, number> = {};
+        (data.dispatch_logs || []).forEach((l: any) => { 
+          dm[l.order_id] = (dm[l.order_id] || 0) + l.windows_dispatched; 
+        });
+        setDispatchMap(dm);
+      } catch (err: any) {
+        toast.error("Failed to load orders");
+      } finally {
+        setLoading(false);
+      }
     };
     fetch();
   }, []);
@@ -86,9 +90,9 @@ export default function InstallationPage() {
         </TableHeader>
         <TableBody>
           {loading ? (
-            <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
+            <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
           ) : list.length === 0 ? (
-            <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">No orders</TableCell></TableRow>
+            <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No orders</TableCell></TableRow>
           ) : list.map((o) => (
             <TableRow key={o.id}>
               <TableCell>

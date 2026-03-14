@@ -15,4 +15,18 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vendor-excel": ["xlsx"],
+          "vendor-charts": ["recharts"],
+          "vendor-icons": ["lucide-react"],
+          "vendor-db": ["@supabase/supabase-js"],
+          "vendor-query": ["@tanstack/react-query"],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 600,
+  },
 }));

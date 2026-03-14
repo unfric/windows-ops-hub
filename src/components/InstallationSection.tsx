@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { useState } from "react";
+import { api } from "@/services/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,11 +8,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { logActivity } from "@/lib/activityLog";
 import { format } from "date-fns";
 import OrderActivityLog from "./OrderActivityLog";
-
-import StatusDropdown from "./StatusDropdown";
 
 interface Props {
   orderId: string;
@@ -23,26 +20,14 @@ interface Props {
 }
 
 export default function InstallationSection({ orderId, order, onRefresh, updateOrder, readOnly }: Props) {
-  const [installLogs, setInstallLogs] = useState<any[]>([]);
-  const [dispatchLogs, setDispatchLogs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [installDate, setInstallDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [windowsCount, setWindowsCount] = useState("");
   const [supervisor, setSupervisor] = useState("");
   const [remarks, setRemarks] = useState("");
 
-  const fetchData = async () => {
-    const [iRes, dRes] = await Promise.all([
-      (supabase.from("installation_logs" as any) as any).select("*").eq("order_id", orderId).order("created_at", { ascending: false }),
-      (supabase.from("dispatch_logs" as any) as any).select("*").eq("order_id", orderId),
-    ]);
-    setInstallLogs(iRes.data || []);
-    setDispatchLogs(dRes.data || []);
-    setLoading(false);
-  };
-
-  useEffect(() => { fetchData(); }, [orderId]);
+  const installLogs = order.installation_logs || [];
+  const dispatchLogs = order.dispatch_logs || [];
 
   const totalDispatched = dispatchLogs.reduce((sum: number, d: any) => sum + d.windows_dispatched, 0);
   const totalInstalled = installLogs.reduce((sum: number, l: any) => sum + l.windows_installed, 0);
@@ -56,33 +41,24 @@ export default function InstallationSection({ orderId, order, onRefresh, updateO
       return;
     }
 
-    const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await (supabase.from("installation_logs" as any) as any).insert({
-      order_id: orderId,
-      windows_installed: count,
-      installation_date: installDate || null,
-      site_supervisor: supervisor || null,
-      remarks: remarks || null,
-      entered_by: user?.id || null,
-    });
+    try {
+      await api.orders.addLog("installation_logs", {
+        order_id: orderId,
+        windows_installed: count,
+        installation_date: installDate || null,
+        site_supervisor: supervisor || null,
+        remarks: remarks || null,
+      });
 
-    if (error) { toast.error(error.message); return; }
-
-    await logActivity({
-      orderId,
-      module: "Installation",
-      fieldName: "windows_installed",
-      oldValue: String(totalInstalled),
-      newValue: String(totalInstalled + count),
-    });
-
-    toast.success(`${count} windows installed`);
-    setAdding(false);
-    setWindowsCount("");
-    setSupervisor("");
-    setRemarks("");
-    fetchData();
-    onRefresh();
+      toast.success(`${count} windows installed`);
+      setAdding(false);
+      setWindowsCount("");
+      setSupervisor("");
+      setRemarks("");
+      onRefresh();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
   };
 
   if (totalDispatched === 0) {

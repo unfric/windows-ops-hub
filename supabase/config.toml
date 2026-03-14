@@ -220,7 +220,7 @@ otp_expiry = 3600
 # [auth.email.smtp]
 # enabled = true
 # host = "smtp.sendgrid.net"
-# port = 587
+# port = 587 
 # user = "apikey"
 # pass = "env(SENDGRID_API_KEY)"
 # admin_email = "admin@email.com"
@@ -392,5 +392,29 @@ enabled = true
 verify_jwt = false
 
 [functions.send-alert]
+enabled = true
+verify_jwt = false
+
+[functions.settings-api]
+enabled = true
+verify_jwt = false
+
+[functions.delete-order]
+enabled = true
+verify_jwt = false
+
+[functions.logs-api]
+enabled = true
+verify_jwt = false
+
+[functions.notifications-api]
+enabled = true
+verify_jwt = false
+
+[functions.order-api]
+enabled = true
+verify_jwt = false
+
+[functions.users-api]
 enabled = true
 verify_jwt = false

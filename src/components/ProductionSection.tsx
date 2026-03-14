@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { useState } from "react";
+import { api } from "@/services/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,6 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { logActivity } from "@/lib/activityLog";
 import { format } from "date-fns";
 import OrderActivityLog from "./OrderActivityLog";
 
@@ -30,20 +29,12 @@ interface Props {
 }
 
 export default function ProductionSection({ orderId, order, onRefresh, readOnly }: Props) {
-  const [logs, setLogs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [addingStage, setAddingStage] = useState<string | null>(null);
   const [entryDate, setEntryDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [entryWindows, setEntryWindows] = useState("");
   const [entryRemarks, setEntryRemarks] = useState("");
 
-  const fetchLogs = async () => {
-    const { data } = await (supabase.from("production_logs" as any) as any).select("*").eq("order_id", orderId).order("created_at", { ascending: false });
-    setLogs(data || []);
-    setLoading(false);
-  };
-
-  useEffect(() => { fetchLogs(); }, [orderId]);
+  const logs = order.production_logs || [];
 
   const stageTotals: Record<string, number> = {};
   STAGES.forEach((s) => {
@@ -74,32 +65,23 @@ export default function ProductionSection({ orderId, order, onRefresh, readOnly 
       return;
     }
 
-    const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await (supabase.from("production_logs" as any) as any).insert({
-      order_id: orderId,
-      stage,
-      windows_completed: count,
-      entry_date: entryDate,
-      remarks: entryRemarks || null,
-      entered_by: user?.id || null,
-    });
+    try {
+      await api.orders.addLog("production_logs", {
+        order_id: orderId,
+        stage,
+        windows_completed: count,
+        entry_date: entryDate,
+        remarks: entryRemarks || null,
+      });
 
-    if (error) { toast.error(error.message); return; }
-
-    await logActivity({
-      orderId,
-      module: "Production",
-      fieldName: stage,
-      oldValue: String(stageTotals[stage] || 0),
-      newValue: String(newTotal),
-    });
-
-    toast.success(`${count} windows added to ${stage}`);
-    setAddingStage(null);
-    setEntryWindows("");
-    setEntryRemarks("");
-    fetchLogs();
-    onRefresh();
+      toast.success(`${count} windows added to ${stage}`);
+      setAddingStage(null);
+      setEntryWindows("");
+      setEntryRemarks("");
+      onRefresh();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
   };
 
   if (order.approval_for_production !== "Approved") {

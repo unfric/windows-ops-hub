@@ -49,6 +49,7 @@ function ProtectedRoutes() {
 
   return (
     <AppLayout>
+      <ThemeSync />
       <Suspense fallback={<div className="flex h-screen items-center justify-center text-muted-foreground">Loading...</div>}>
         <Routes>
           {/* Operations Hub is the main dashboard */}
@@ -90,7 +91,6 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <ThemeSync />
       <AuthProvider>
         <BrowserRouter>
           <Routes>

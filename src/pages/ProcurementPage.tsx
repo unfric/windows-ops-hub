@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import { Link } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -50,11 +50,8 @@ interface Filters {
 
 const emptyFilters: Filters = { salesperson: "", orderOwner: "" };
 
-const PO_STATUSES = ["Pending PO", "PO Placed", "Delivered", "In Stock / Available", "Not Required"];
-const COATING_STATUSES = ["Pending Coating", "Sent to Coating", "Delivered", "In Stock / Available", "Not Required"];
-
 const poColor = (status: string) => {
-  if (status === "Delivered" || status === "In Stock / Available") return "bg-success/15 text-success border-success/20";
+  if (status === "Delivered" || status === "In Stock / Available" || status === "Not Required") return "bg-success/15 text-success border-success/20";
   if (status === "PO Placed" || status === "Sent to Coating" || status === "Partially Available") return "bg-warning/15 text-warning border-warning/20";
   return "bg-muted text-muted-foreground";
 };
@@ -91,20 +88,29 @@ export default function ProcurementPage() {
   const [owners, setOwners] = useState<string[]>([]);
 
   const fetchData = async () => {
-    const { data, error } = await supabase.from("orders").select("*").order("created_at", { ascending: false });
-    if (error) toast.error("Failed to load orders");
-    else {
+    try {
+      const data = await api.orders.list();
+      if (!data.orders) { setLoading(false); return; }
+      const all = (data.orders as unknown as Order[]) || [];
       // Only show orders where design has been released (ATW > 0)
-      const all = (data as unknown as Order[]) || [];
       setOrders(all.filter((o) => (o.design_released_windows || 0) > 0));
+    } catch (err: any) {
+      toast.error("Failed to load orders");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const fetchFilterOptions = async () => {
-    const { data: sp } = await supabase.from("salespersons").select("name").eq("active", true).order("name");
-    setSalespersons((sp || []).map((d: any) => d.name));
-    setOwners([...new Set(orders.map((o) => o.dealer_name).filter(Boolean))].sort());
+    try {
+      const settings = await api.settings.list();
+      if (settings) {
+        setSalespersons(settings.salespersons?.map((s: any) => s.name) || []);
+      }
+      setOwners([...new Set(orders.map((o) => o.dealer_name).filter(Boolean))].sort());
+    } catch (err) {
+      console.error("Error fetching filter options:", err);
+    }
   };
 
   useEffect(() => { fetchData(); }, []);

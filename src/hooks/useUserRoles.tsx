@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { api } from "@/services/api";
 import type { Database } from "@/integrations/supabase/types";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
@@ -13,12 +14,14 @@ export function useUserRoles() {
   useEffect(() => {
     if (!user) { setRoles([]); setLoading(false); return; }
 
-    supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", user.id)
-      .then(({ data }) => {
-        setRoles((data || []).map((r) => r.role));
+    api.users.getRoles()
+      .then((roles) => {
+        setRoles(roles);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch roles:", err);
+        setRoles([]);
         setLoading(false);
       });
   }, [user]);

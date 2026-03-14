@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -11,8 +11,6 @@ import { ArrowLeft, Check } from "lucide-react";
 import { toast } from "sonner";
 import StatusDropdown from "@/components/StatusDropdown";
 import { STATUS_OPTIONS } from "@/lib/statusConfig";
-import { logAuditEntry } from "@/lib/auditLog";
-import { logActivity } from "@/lib/activityLog";
 import { triggerStatusNotification } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 
@@ -47,17 +45,14 @@ export default function OrderDetailPage() {
 
   const fetchAll = async () => {
     if (!id) return;
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("id", id)
-      .single();
-    if (error) {
-      toast.error("Order not found");
-      return;
+    try {
+      const data = await api.orders.get(id);
+      setOrder(data);
+    } catch (error: any) {
+      toast.error(error.message || "Order not found");
+    } finally {
+      setLoading(false);
     }
-    setOrder(data);
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -65,36 +60,16 @@ export default function OrderDetailPage() {
   }, [id]);
 
   const updateOrder = async (field: string, value: any) => {
-    const oldValue = order[field];
-    const { error } = await supabase
-      .from("orders")
-      .update({ [field]: value })
-      .eq("id", id!);
-
-    if (error) {
-      toast.error(error.message);
-    } else {
-      await logAuditEntry({
-        entityType: "orders",
-        entityId: id!,
-        field,
-        oldValue: oldValue != null ? String(oldValue) : null,
-        newValue: value != null ? String(value) : null,
-      });
-
-      await logActivity({
-        orderId: id!,
-        module: "Sales",
-        fieldName: field,
-        oldValue: oldValue != null ? String(oldValue) : null,
-        newValue: value != null ? String(value) : null,
-      });
-
+    try {
+      await api.orders.updateField(id!, field, value, "Sales");
+      
       if (field.endsWith("_status")) {
         triggerStatusNotification(id!, order.order_name, field, String(value));
       }
       toast.success("Updated");
       fetchAll();
+    } catch (error: any) {
+      toast.error(error.message);
     }
   };
 
@@ -274,7 +249,7 @@ export default function OrderDetailPage() {
         </TabsContent>
 
         <TabsContent value="rework" className="mt-4">
-          <ReworkSection orderId={id!} readOnly={!canEdit(["production", "installation", "design"])} />
+          <ReworkSection orderId={id!} order={order} onRefresh={fetchAll} readOnly={!canEdit(["production", "installation", "design"])} />
         </TabsContent>
       </Tabs>
     </div>
@@ -290,26 +265,10 @@ function PipelineStepper({
   activeTab: string,
   onStepClick: (tab: string) => void
 }) {
-  const [reworkLogs, setReworkLogs] = useState<any[]>([]);
-  const [productionLogs, setProductionLogs] = useState<any[]>([]);
-  const [dispatchLogs, setDispatchLogs] = useState<any[]>([]);
-  const [installLogs, setInstallLogs] = useState<any[]>([]);
-
-  useEffect(() => {
-    const fetchLogData = async () => {
-      const [rRes, pRes, dRes, iRes] = await Promise.all([
-        supabase.from("rework_logs" as any).select("*").eq("order_id", order.id),
-        supabase.from("production_logs" as any).select("*").eq("order_id", order.id),
-        supabase.from("dispatch_logs" as any).select("*").eq("order_id", order.id),
-        supabase.from("installation_logs" as any).select("*").eq("order_id", order.id)
-      ]);
-      setReworkLogs(rRes.data || []);
-      setProductionLogs(pRes.data || []);
-      setDispatchLogs(dRes.data || []);
-      setInstallLogs(iRes.data || []);
-    };
-    fetchLogData();
-  }, [order.id]);
+  const reworkLogs = order.rework_logs || [];
+  const productionLogs = order.production_logs || [];
+  const dispatchLogs = order.dispatch_logs || [];
+  const installLogs = order.installation_logs || [];
 
   const packedCount = productionLogs.filter(l => l.stage === "Packed").reduce((s, l) => s + (l.windows_completed || 0), 0);
   const dispatchedCount = dispatchLogs.reduce((s, l) => s + (l.windows_dispatched || 0), 0);

@@ -1,12 +1,10 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import { Link, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-    Calendar as CalendarIcon,
     TrendingUp,
     AlertTriangle,
     ClipboardCheck,
@@ -21,10 +19,7 @@ import {
     Activity
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, subWeeks, startOfMonth, endOfMonth, subMonths, isWithinInterval, parseISO } from "date-fns";
-import {
-    PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend
-} from "recharts";
+import { startOfDay, endOfDay, startOfWeek, startOfMonth, isWithinInterval, parseISO } from "date-fns";
 
 type TimeHorizon = "daily" | "weekly" | "monthly" | "all";
 
@@ -97,8 +92,6 @@ interface KPIStats {
     reworkByCost: Record<string, number>;
 }
 
-const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#6366f1"];
-
 export default function OperationalDashboard() {
     const [horizon, setHorizon] = useState<TimeHorizon>("weekly");
     const [stats, setStats] = useState<KPIStats | null>(null);
@@ -126,28 +119,14 @@ export default function OperationalDashboard() {
                 start = startOfMonth(now);
             }
 
-            const [
-                ordersRes,
-                prodLogsRes,
-                dispLogsRes,
-                payLogsRes,
-                rewLogsRes,
-                actLogsRes
-            ] = await Promise.all([
-                supabase.from("orders").select("*"),
-                supabase.from("production_logs").select("*"),
-                supabase.from("dispatch_logs").select("*"),
-                supabase.from("payment_logs").select("*"),
-                supabase.from("rework_logs").select("*"),
-                supabase.from("order_activity_log" as any).select("*")
-            ]);
-
-            const orders = ordersRes.data || [];
-            const prodLogs = prodLogsRes.data || [];
-            const dispLogs = dispLogsRes.data || [];
-            const payLogs = payLogsRes.data || [];
-            const rewLogs = rewLogsRes.data || [];
-            const actLogs = actLogsRes.data || [];
+            const data = await api.orders.list();
+            
+            const orders = data.orders || [];
+            const prodLogs = data.production_logs || [];
+            const dispLogs = data.dispatch_logs || [];
+            const payLogs = data.payment_logs || [];
+            const rewLogs = data.rework_logs || [];
+            const actLogs = data.activity_logs || [];
 
             const filterByHorizon = (logs: any[], dateField = "created_at") => {
                 if (horizon === "all" || !start) return logs;
@@ -156,7 +135,7 @@ export default function OperationalDashboard() {
                         const rawDate = l[dateField] || l.created_at;
                         if (!rawDate) return false;
                         const d = parseISO(rawDate);
-                        return isWithinInterval(d, { start, end });
+                        return isWithinInterval(d, { start, end: end! });
                     } catch {
                         return false;
                     }
@@ -171,13 +150,13 @@ export default function OperationalDashboard() {
 
             // Pipeline Summaries (Static snapshot)
             const packedMap: Record<string, number> = {};
-            prodLogs.forEach(l => { if (l.stage === "Packed") packedMap[l.order_id] = (packedMap[l.order_id] || 0) + (l.windows_completed || 0); });
+            prodLogs.forEach((l: any) => { if (l.stage === "Packed") packedMap[l.order_id] = (packedMap[l.order_id] || 0) + (l.windows_completed || 0); });
 
             const dispMap: Record<string, number> = {};
-            dispLogs.forEach(l => { dispMap[l.order_id] = (dispMap[l.order_id] || 0) + (l.windows_dispatched || 0); });
+            dispLogs.forEach((l: any) => { dispMap[l.order_id] = (dispMap[l.order_id] || 0) + (l.windows_dispatched || 0); });
 
             const totalOrders = orders.length;
-            const completedOrders = orders.filter(o => {
+            const completedOrders = orders.filter((o: any) => {
                 const disp = dispMap[o.id] || 0;
                 return disp >= o.total_windows && o.total_windows > 0;
             }).length;
@@ -211,74 +190,74 @@ export default function OperationalDashboard() {
                     statuses.some((s) => s === "Delivered" || s === "In Stock / Available");
             };
 
-            const relOrders = orders.filter(o => (o.design_released_windows || 0) > 0);
+            const relOrders = orders.filter((o: any) => (o.design_released_windows || 0) > 0);
 
             // Rework aggregation
             const reworkByCost: Record<string, number> = {};
-            rewLogs.forEach(r => {
+            rewLogs.forEach((r: any) => {
                 const cat = r.issue_type || "Uncategorized";
                 reworkByCost[cat] = (reworkByCost[cat] || 0) + 1;
             });
 
             const newStats: KPIStats = {
-                totalProjects: new Set(orders.map(o => o.order_name.split("-")[0].trim())).size,
+                totalProjects: new Set(orders.map((o: any) => o.order_name.split("-")[0].trim())).size,
                 totalOrders,
-                totalRetailOrders: orders.filter(o => o.order_type === "Retail").length,
-                totalWindowOrders: orders.reduce((s, o) => s + (o.total_windows || 0), 0),
-                totalOrderValue: orders.reduce((s, o) => s + Number(o.order_value || 0), 0),
-                totalSoldValue: orders.filter(o => o.commercial_status === "Approved").reduce((s, o) => s + Number(o.order_value || 0), 0),
+                totalRetailOrders: orders.filter((o: any) => o.order_type === "Retail").length,
+                totalWindowOrders: orders.reduce((s: number, o: any) => s + (o.total_windows || 0), 0),
+                totalOrderValue: orders.reduce((s: number, o: any) => s + Number(o.order_value || 0), 0),
+                totalSoldValue: orders.filter((o: any) => o.commercial_status === "Approved").reduce((s: number, o: any) => s + Number(o.order_value || 0), 0),
                 activeOrders: totalOrders - completedOrders,
                 completedOrders,
 
-                windowsPendingSurvey: orders.reduce((s, o) => s + (o.total_windows - (o.survey_done_windows || 0)), 0),
-                windowsSurveyed: orders.reduce((s, o) => s + (o.survey_done_windows || 0), 0),
-                surveyCompletionRate: orders.length ? Math.round((orders.reduce((s, o) => s + (o.survey_done_windows || 0), 0) / orders.reduce((s, o) => s + (o.total_windows || 0), 0)) * 100) : 0,
-                ordersAwaitingSurvey: orders.filter(o => (o.survey_done_windows || 0) === 0).length,
-                surveyActivity: horizAct.filter(l => l.module === "Survey" && l.field_name === "survey_done_windows").length,
+                windowsPendingSurvey: orders.reduce((s: number, o: any) => s + (o.total_windows - (o.survey_done_windows || 0)), 0),
+                windowsSurveyed: orders.reduce((s: number, o: any) => s + (o.survey_done_windows || 0), 0),
+                surveyCompletionRate: orders.length ? Math.round((orders.reduce((s: number, o: any) => s + (o.survey_done_windows || 0), 0) / orders.reduce((s: number, o: any) => s + (o.total_windows || 0), 0)) * 100) : 0,
+                ordersAwaitingSurvey: orders.filter((o: any) => (o.survey_done_windows || 0) === 0).length,
+                surveyActivity: horizAct.filter((l: any) => l.module === "Survey" && l.field_name === "survey_done_windows").length,
 
-                windowsPendingDesign: orders.reduce((s, o) => s + (o.survey_done_windows - (o.design_released_windows || 0)), 0),
-                windowsReleased: orders.reduce((s, o) => s + (o.design_released_windows || 0), 0),
-                designCompletionRate: orders.reduce((s, o) => s + (o.survey_done_windows || 0), 0) ? Math.round((orders.reduce((s, o) => s + (o.design_released_windows || 0), 0) / orders.reduce((s, o) => s + (o.survey_done_windows || 0), 0)) * 100) : 0,
-                ordersAwaitingDesign: orders.filter(o => o.survey_done_windows > 0 && (o.design_released_windows || 0) === 0).length,
-                designActivity: horizAct.filter(l => l.module === "Design" && l.field_name === "design_released_windows").length,
+                windowsPendingDesign: orders.reduce((s: number, o: any) => s + (o.survey_done_windows - (o.design_released_windows || 0)), 0),
+                windowsReleased: orders.reduce((s: number, o: any) => s + (o.design_released_windows || 0), 0),
+                designCompletionRate: orders.reduce((s: number, o: any) => s + (o.survey_done_windows || 0), 0) ? Math.round((orders.reduce((s: number, o: any) => s + (o.design_released_windows || 0), 0) / orders.reduce((s: number, o: any) => s + (o.survey_done_windows || 0), 0)) * 100) : 0,
+                ordersAwaitingDesign: orders.filter((o: any) => o.survey_done_windows > 0 && (o.design_released_windows || 0) === 0).length,
+                designActivity: horizAct.filter((l: any) => l.module === "Design" && l.field_name === "design_released_windows").length,
 
-                cuttingCompleted: horizProd.filter(l => l.stage === "Cutting").reduce((s, l) => s + (l.windows_completed || 0), 0),
-                assemblyCompleted: horizProd.filter(l => l.stage === "Assembly").reduce((s, l) => s + (l.windows_completed || 0), 0),
-                glazingCompleted: horizProd.filter(l => l.stage === "Glazing").reduce((s, l) => s + (l.windows_completed || 0), 0),
-                qualityPassed: horizProd.filter(l => l.stage === "Quality").reduce((s, l) => s + (l.windows_completed || 0), 0),
-                windowsPacked: horizProd.filter(l => l.stage === "Packed").reduce((s, l) => s + (l.windows_completed || 0), 0),
-                productionBacklog: orders.filter(o => o.approval_for_production === "Approved").reduce((s, o) => s + (o.design_released_windows - (packedMap[o.id] || 0)), 0),
-                productionActivity: horizProd.reduce((s, l) => s + (l.windows_completed || 0), 0),
+                cuttingCompleted: horizProd.filter((l: any) => l.stage === "Cutting").reduce((s: number, l: any) => s + (l.windows_completed || 0), 0),
+                assemblyCompleted: horizProd.filter((l: any) => l.stage === "Assembly").reduce((s: number, l: any) => s + (l.windows_completed || 0), 0),
+                glazingCompleted: horizProd.filter((l: any) => l.stage === "Glazing").reduce((s: number, l: any) => s + (l.windows_completed || 0), 0),
+                qualityPassed: horizProd.filter((l: any) => l.stage === "Quality").reduce((s: number, l: any) => s + (l.windows_completed || 0), 0),
+                windowsPacked: horizProd.filter((l: any) => l.stage === "Packed").reduce((s: number, l: any) => s + (l.windows_completed || 0), 0),
+                productionBacklog: orders.filter((o: any) => o.approval_for_production === "Approved").reduce((s: number, o: any) => s + (o.design_released_windows - (packedMap[o.id] || 0)), 0),
+                productionActivity: horizProd.reduce((s: number, l: any) => s + (l.windows_completed || 0), 0),
 
-                windowsReadyForDispatch: orders.reduce((s, o) => s + ((packedMap[o.id] || 0) - (dispMap[o.id] || 0)), 0),
-                windowsDispatched: orders.reduce((s, o) => s + (dispMap[o.id] || 0), 0),
-                dispatchCompletionRate: orders.reduce((s, o) => s + (packedMap[o.id] || 0), 0) ? Math.round((orders.reduce((s, o) => s + (dispMap[o.id] || 0), 0) / orders.reduce((s, o) => s + (packedMap[o.id] || 0), 0)) * 100) : 0,
-                ordersReadyForDispatch: orders.filter(o => (packedMap[o.id] || 0) > 0 && (dispMap[o.id] || 0) < (packedMap[o.id] || 0)).length,
-                dispatchActivity: horizDisp.reduce((s, l) => s + (l.windows_dispatched || 0), 0),
+                windowsReadyForDispatch: orders.reduce((s: number, o: any) => s + ((packedMap[o.id] || 0) - (dispMap[o.id] || 0)), 0),
+                windowsDispatched: orders.reduce((s: number, o: any) => s + (dispMap[o.id] || 0), 0),
+                dispatchCompletionRate: orders.reduce((s: number, o: any) => s + (packedMap[o.id] || 0), 0) ? Math.round((orders.reduce((s: number, o: any) => s + (dispMap[o.id] || 0), 0) / orders.reduce((s: number, o: any) => s + (packedMap[o.id] || 0), 0)) * 100) : 0,
+                ordersReadyForDispatch: orders.filter((o: any) => (packedMap[o.id] || 0) > 0 && (dispMap[o.id] || 0) < (packedMap[o.id] || 0)).length,
+                dispatchActivity: horizDisp.reduce((s: number, l: any) => s + (l.windows_dispatched || 0), 0),
 
-                pendingProductionApprovals: orders.filter(o => o.approval_for_production !== "Approved" && o.design_released_windows > 0).length,
-                pendingDispatchApprovals: orders.filter(o => o.approval_for_dispatch !== "Approved" && (packedMap[o.id] || 0) > 0).length,
-                paymentsReceived: horizPay.filter(l => l.status === "Confirmed").reduce((s, l) => s + Number(l.amount || 0), 0),
-                outstandingBalance: orders.reduce((s, o) => s + Number(o.balance_amount || 0), 0),
+                pendingProductionApprovals: orders.filter((o: any) => o.approval_for_production !== "Approved" && o.design_released_windows > 0).length,
+                pendingDispatchApprovals: orders.filter((o: any) => o.approval_for_dispatch !== "Approved" && (packedMap[o.id] || 0) > 0).length,
+                paymentsReceived: horizPay.filter((l: any) => l.status === "Confirmed").reduce((s: number, l: any) => s + Number(l.amount || 0), 0),
+                outstandingBalance: orders.reduce((s: number, o: any) => s + Number(o.balance_amount || 0), 0),
 
                 // Store
-                ordersAwaitingStore: relOrders.filter(o => isStoreAwaiting(o)).length,
-                ordersReadyForProduction: relOrders.filter(o => isStoreAvailable(o)).length,
-                ordersBlockedInStore: relOrders.filter(o => !isStoreAvailable(o) && !isStoreAwaiting(o)).length,
-                storeProcessedOrders: relOrders.filter(o => isStoreAvailable(o)).length,
-                storeActivity: horizAct.filter(l => l.module?.includes("Store")).length,
+                ordersAwaitingStore: relOrders.filter((o: any) => isStoreAwaiting(o)).length,
+                ordersReadyForProduction: relOrders.filter((o: any) => isStoreAvailable(o)).length,
+                ordersBlockedInStore: relOrders.filter((o: any) => !isStoreAvailable(o) && !isStoreAwaiting(o)).length,
+                storeProcessedOrders: relOrders.filter((o: any) => isStoreAvailable(o)).length,
+                storeActivity: horizAct.filter((l: any) => l.module?.includes("Store")).length,
 
                 // Procurement
-                ordersRequiringProcurement: relOrders.filter(o => isPoPending(o)).length,
-                procurementInitiated: relOrders.filter(o => isDeliveryPending(o)).length,
-                ordersAwaitingSupplier: relOrders.filter(o => isDeliveryPending(o)).length,
-                procurementCompleted: relOrders.filter(o => isProcCompleted(o)).length,
-                procurementActivity: horizAct.filter(l => l.module?.includes("Procurement")).length,
+                ordersRequiringProcurement: relOrders.filter((o: any) => isPoPending(o)).length,
+                procurementInitiated: relOrders.filter((o: any) => isDeliveryPending(o)).length,
+                ordersAwaitingSupplier: relOrders.filter((o: any) => isDeliveryPending(o)).length,
+                procurementCompleted: relOrders.filter((o: any) => isProcCompleted(o)).length,
+                procurementActivity: horizAct.filter((l: any) => l.module?.includes("Procurement")).length,
 
                 totalReworkCases: rewLogs.length,
-                windowsUnderRework: rewLogs.filter(r => r.status !== "Solved").reduce((s, r) => s + (r.rework_qty || 0), 0),
-                reworkCompleted: horizRew.filter(r => r.status === "Solved").reduce((s, r) => s + (r.rework_qty || 0), 0),
-                reworkPending: rewLogs.filter(r => r.status !== "Solved").length,
+                windowsUnderRework: rewLogs.filter((r: any) => r.status !== "Solved").reduce((s: number, r: any) => s + (r.rework_qty || 0), 0),
+                reworkCompleted: horizRew.filter((r: any) => r.status === "Solved").reduce((s: number, r: any) => s + (r.rework_qty || 0), 0),
+                reworkPending: rewLogs.filter((r: any) => r.status !== "Solved").length,
                 reworkByCost
             };
 
@@ -383,7 +362,7 @@ export default function OperationalDashboard() {
 
             <div className="space-y-12">
                 {/* Alerts Section (Bottlenecks) */}
-                {(stats.productionBacklog > 50 || stats.reworkPending > 5 || stats.pendingProductionApprovals > 3) && (
+                {stats && (stats.productionBacklog > 50 || stats.reworkPending > 5 || stats.pendingProductionApprovals > 3) && (
                     <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 flex flex-col md:flex-row gap-6 items-start md:items-center">
                         <div className="bg-amber-100 p-3 rounded-xl">
                             <AlertTriangle className="h-6 w-6 text-amber-600" />

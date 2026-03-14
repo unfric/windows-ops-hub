@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,9 +28,16 @@ function ConfigList({ table, title }: { table: string; title: string }) {
   const [loading, setLoading] = useState(true);
 
   const fetchItems = async () => {
-    const { data } = await (supabase.from(table as any).select("*") as any).order("created_at");
-    setItems((data as ConfigItem[]) || []);
-    setLoading(false);
+    try {
+      const settings = await api.settings.list();
+      if (settings && settings[table]) {
+        setItems(settings[table] as ConfigItem[]);
+      }
+    } catch (err) {
+      console.error(`Error fetching ${table}:`, err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { fetchItems(); }, []);
@@ -38,20 +45,32 @@ function ConfigList({ table, title }: { table: string; title: string }) {
   const add = async () => {
     const name = newName.trim();
     if (!name) return;
-    const { error } = await (supabase.from(table as any) as any).insert({ name });
-    if (error) toast.error(error.message);
-    else { toast.success(`${title} added`); setNewName(""); fetchItems(); }
+    try {
+      await api.settings.upsert(table, { name });
+      toast.success(`${title} added`);
+      setNewName("");
+      fetchItems();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to add item");
+    }
   };
 
   const toggle = async (item: ConfigItem) => {
-    await (supabase.from(table as any) as any).update({ active: !item.active }).eq("id", item.id);
-    fetchItems();
+    try {
+      await api.settings.upsert(table, { id: item.id, active: !item.active });
+      fetchItems();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to toggle item");
+    }
   };
 
   const remove = async (id: string) => {
-    const { error } = await (supabase.from(table as any) as any).delete().eq("id", id);
-    if (error) toast.error(error.message);
-    else fetchItems();
+    try {
+      await api.settings.delete(table, id);
+      fetchItems();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete item");
+    }
   };
 
   return (
@@ -116,39 +135,48 @@ export default function GeneralSettingsPage() {
   const [editValues, setEditValues] = useState<Record<string, string>>({});
 
   const fetchSettings = async () => {
-    const { data } = await (supabase.from("app_settings" as any).select("*") as any);
-    const items = (data as AppSetting[]) || [];
-    setSettings(items);
-    const vals: Record<string, string> = {};
-    items.forEach((s) => { 
-      vals[s.key] = s.value; 
-      if (s.key === "theme_primary") {
-        document.documentElement.style.setProperty('--primary', s.value);
-        document.documentElement.style.setProperty('--ring', s.value);
-      }
-    });
-    setEditValues(vals);
-    setLoading(false);
+    try {
+      const data = await api.settings.list();
+      const items = (data.app_settings as AppSetting[]) || [];
+      setSettings(items);
+      const vals: Record<string, string> = {};
+      items.forEach((s) => { 
+        vals[s.key] = s.value; 
+        if (s.key === "theme_primary") {
+          applyTheme(s.value);
+        }
+      });
+      setEditValues(vals);
+    } catch (err) {
+      console.error("Error fetching app settings:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { fetchSettings(); }, []);
 
-  const save = async (key: string) => {
+  const save = async (key: string, explicitValue?: string) => {
     const setting = settings.find((s) => s.key === key);
-    if (!setting) return;
-    const { error } = await (supabase.from("app_settings" as any) as any)
-      .update({ value: editValues[key], updated_at: new Date().toISOString() })
-      .eq("id", setting.id);
-    if (error) toast.error(error.message);
-    else {
+    const value = explicitValue !== undefined ? explicitValue : editValues[key];
+    try {
+      await api.settings.upsert("app_settings", { 
+        id: setting?.id, 
+        key, 
+        value 
+      });
       toast.success("Setting saved");
       if (key === "theme_primary") {
-        applyTheme(editValues[key]);
+        applyTheme(value);
       }
+      fetchSettings();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save setting");
     }
   };
 
   const applyTheme = (color: string) => {
+    if (!color) return;
     document.documentElement.style.setProperty('--primary', color);
     document.documentElement.style.setProperty('--ring', color);
   };
@@ -162,7 +190,6 @@ export default function GeneralSettingsPage() {
     { name: "Amber", value: "38 92% 50%" },
   ];
 
-  const minAdvance = settings.find((s) => s.key === "min_advance_percentage");
   const currentTheme = editValues["theme_primary"] || "213 50% 32%";
 
   return (
@@ -186,14 +213,7 @@ export default function GeneralSettingsPage() {
                       key={c.value}
                       onClick={() => {
                         setEditValues({ ...editValues, theme_primary: c.value });
-                        // If the setting exists in DB, save it, otherwise just apply locally
-                        const setting = settings.find(s => s.key === "theme_primary");
-                        if (setting) {
-                          save("theme_primary");
-                        } else {
-                          applyTheme(c.value);
-                          toast.success(`Applied ${c.name} theme`);
-                        }
+                        save("theme_primary", c.value);
                       }}
                       className={cn(
                         "group relative flex flex-col items-center gap-1.5 p-2 rounded-lg border-2 transition-all",

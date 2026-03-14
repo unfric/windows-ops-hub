@@ -1,11 +1,10 @@
 import { useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { logActivity } from "@/lib/activityLog";
 
 import { cn } from "@/lib/utils";
 import StatusDropdown from "./StatusDropdown";
@@ -40,18 +39,13 @@ export default function SurveySection({ orderId, order, onRefresh, updateOrder, 
       }
     }
 
-    const { error } = await supabase.from("orders").update({ [field]: value } as any).eq("id", orderId);
-    if (error) { toast.error(error.message); return; }
-
-    await logActivity({
-      orderId,
-      module: "Survey",
-      fieldName: field,
-      oldValue: oldVal != null ? String(oldVal) : null,
-      newValue: value != null ? String(value) : null,
-    });
-    toast.success("Updated");
-    onRefresh();
+    try {
+      await api.orders.updateField(orderId, field, value, "Survey");
+      toast.success("Updated");
+      onRefresh();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
   };
 
   return (

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -11,7 +11,6 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { logActivity } from "@/lib/activityLog";
 
 interface SettingsItem { id: string; name: string; active: boolean; }
 
@@ -65,22 +64,20 @@ export default function EditOrderDialog({ open, onOpenChange, onUpdated, order }
     setCommercialStatus(order.commercial_status || "");
 
     const fetchAll = async () => {
-      const [pn, dl, pc, cs, sp, opt, cst] = await Promise.all([
-        supabase.from("project_names" as any).select("*").eq("active", true).order("name") as any,
-        supabase.from("dealers").select("*").eq("active", true).order("name"),
-        supabase.from("project_client_names" as any).select("*").eq("active", true).order("name") as any,
-        supabase.from("colour_shades").select("*").eq("active", true).order("name"),
-        supabase.from("salespersons").select("*").eq("active", true).order("name"),
-        supabase.from("other_product_types" as any).select("*").eq("active", true).order("name") as any,
-        supabase.from("commercial_statuses" as any).select("*").eq("active", true).order("name") as any,
-      ]);
-      setProjectNames((pn.data as SettingsItem[]) || []);
-      setDealers((dl.data as SettingsItem[]) || []);
-      setProjectClients((pc.data as SettingsItem[]) || []);
-      setColourShades((cs.data as SettingsItem[]) || []);
-      setSalespersons((sp.data as SettingsItem[]) || []);
-      setProducts((opt.data as SettingsItem[]) || []);
-      setCommercialStatuses((cst.data as SettingsItem[]) || []);
+      try {
+        const settings = await api.settings.list();
+        if (settings) {
+          setProjectNames(settings.project_names || []);
+          setDealers(settings.dealers || []);
+          setProjectClients(settings.project_client_names || []);
+          setColourShades(settings.colour_shades || []);
+          setSalespersons(settings.salespersons || []);
+          setProducts(settings.other_product_types || []);
+          setCommercialStatuses(settings.commercial_statuses || []);
+        }
+      } catch (err) {
+        console.error("Error fetching settings:", err);
+      }
     };
     fetchAll();
   }, [open, order]);
@@ -96,123 +93,45 @@ export default function EditOrderDialog({ open, onOpenChange, onUpdated, order }
     if (selectedProducts.length === 0) return toast.error("Select at least one product");
     if (advanceReceived && Number(advanceAmount) > Number(orderValue)) return toast.error("Advance cannot exceed Order Value");
 
-    if (quoteNo.trim()) {
-      const { data: existing } = await supabase
-        .from("orders").select("id").eq("quote_no", quoteNo.trim()).neq("id", order.id).maybeSingle();
-      if (existing) return toast.error("Quotation Number already exists");
-    }
-
     setSubmitting(true);
-    const payload: Record<string, any> = {
-      order_type: orderType,
-      order_name: orderName.trim(),
-      dealer_name: orderOwner,
-      quote_no: quoteNo.trim() || null,
-      colour_shade: colourShade || null,
-      salesperson: salesperson || null,
-      product_type: selectedProducts.join(", "),
-      total_windows: Number(qty) || 0,
-      sqft: Number(sqft) || 0,
-      order_value: Number(orderValue) || 0,
-      advance_received: advanceReceived ? Number(advanceAmount) || 0 : 0,
-      commercial_status: commercialStatus || "Pipeline",
-    };
+    try {
+      const payload: Record<string, any> = {
+        order_type: orderType,
+        order_name: orderName.trim(),
+        dealer_name: orderOwner,
+        quote_no: quoteNo.trim() || null,
+        colour_shade: colourShade || null,
+        salesperson: salesperson || null,
+        product_type: selectedProducts.join(", "),
+        total_windows: Number(qty) || 0,
+        sqft: Number(sqft) || 0,
+        order_value: Number(orderValue) || 0,
+        advance_received: advanceReceived ? Number(advanceAmount) || 0 : 0,
+        commercial_status: commercialStatus || "Pipeline",
+      };
 
-    // Log changes
-    const changedFields = Object.entries(payload).filter(([key, val]) => {
-      const oldVal = order[key];
-      return String(val ?? "") !== String(oldVal ?? "");
-    });
-
-    const { error } = await supabase.from("orders").update(payload).eq("id", order.id);
-    setSubmitting(false);
-
-    if (error) {
-      toast.error(error.message);
-    } else {
-      // Log activity for changed fields
-      for (const [key, val] of changedFields) {
-        await logActivity({
-          orderId: order.id,
-          module: "sales",
-          fieldName: key,
-          oldValue: order[key] != null ? String(order[key]) : null,
-          newValue: val != null ? String(val) : null,
-        });
-      }
+      await api.orders.update(order.id, payload);
       toast.success("Order updated");
       onOpenChange(false);
       onUpdated();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update order");
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleDelete = async () => {
     if (!window.confirm("Are you exactly sure you want to delete this order? This action cannot be undone.")) return;
 
-    // Deletion constraint logic: Only delete if no downstream modules have progressed
-    if ((order.survey_done_windows || 0) > 0) return toast.error("Cannot delete: Order has progressed to Survey module. Survey must be reverted back to 0 first.");
-    if ((order.design_released_windows || 0) > 0) return toast.error("Cannot delete: Order has progressed to Design module. Design must be reverted back to 0 first.");
-
-    // Check for Production logs specifically (if foreign-key constraint doesn't cascade, we should warn manually)
-    const { count: prodCount } = await supabase.from("production_logs").select("*", { count: 'exact', head: true }).eq("order_id", order.id);
-    if ((prodCount || 0) > 0) return toast.error("Cannot delete: Order has production logs. Production logs must be deleted first.");
-
-    const { count: paymentCount } = await supabase.from("payment_logs").select("*", { count: 'exact', head: true }).eq("order_id", order.id);
-    if ((paymentCount || 0) > 0) return toast.error("Cannot delete: Order has payment logs. Finance must delete logs first.");
-
     setDeleting(true);
-
     try {
-      // Explicitly delete ALL child records — manual cascade
-      const tables = [
-        "order_activity_log",
-        "dispatch",
-        "dispatch_logs",
-        "installation",
-        "installation_logs",
-        "material_status",
-        "production_status",
-        "payment_logs",
-        "production_logs",
-        "rework_logs",
-      ] as const;
-
-      for (const table of tables) {
-        const { error: childErr } = await (supabase.from(table as any) as any).delete().eq("order_id", order.id);
-        if (childErr && childErr.code !== "PGRST204") {
-          console.warn(`Failed to delete from ${table}:`, childErr.message);
-        }
-      }
-
-      // Also cleanup polymorphic audit logs
-      const { error: auditErr } = await supabase.from("audit_log").delete().eq("entity_id", order.id).eq("entity_type", "orders");
-      if (auditErr) console.warn("Failed to cleanup audit_log:", auditErr.message);
-
-      // Now attempt main order deletion
-      const { error: deleteErr, count } = await (supabase.from("orders") as any).delete({ count: "exact" }).eq("id", order.id);
-
-      console.log("Order delete result — error:", deleteErr, "count:", count);
-
-      if (deleteErr) {
-        toast.error(`Delete failed: ${deleteErr.message}`);
-        setDeleting(false);
-        return;
-      }
-
-      if (!count || count === 0) {
-        // Fallback: If exact count check failed but error is null, it might be an RLS issue or just count reporting quirk.
-        // We will try one more time without count check or just warn more clearly.
-        toast.error("Database rejected the deletion (0 rows affected). Please contact admin to check your Delete permissions (RLS) for the 'orders' table.");
-        setDeleting(false);
-        return;
-      }
-
+      await api.orders.delete(order.id);
       toast.success("Order deleted successfully");
       onOpenChange(false);
       onUpdated();
     } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || "An unexpected error occurred during deletion.");
+      toast.error(err.message || "Failed to delete order");
     } finally {
       setDeleting(false);
     }

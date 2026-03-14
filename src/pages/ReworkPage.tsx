@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -16,20 +16,22 @@ export default function ReworkPage() {
 
   useEffect(() => {
     const fetch = async () => {
-      const [oRes, rRes] = await Promise.all([
-        supabase.from("orders").select("*").order("created_at", { ascending: false }),
-        (supabase.from("rework_logs" as any) as any).select("*"),
-      ]);
-      if (oRes.error) { toast.error("Failed to load orders"); return; }
-      setOrders(oRes.data || []);
+      try {
+        const data = await api.orders.list();
+        if (!data.orders) { setLoading(false); return; }
+        setOrders(data.orders || []);
 
-      const rm: Record<string, any[]> = {};
-      (rRes.data || []).forEach((l: any) => {
-        if (!rm[l.order_id]) rm[l.order_id] = [];
-        rm[l.order_id].push(l);
-      });
-      setReworkMap(rm);
-      setLoading(false);
+        const rm: Record<string, any[]> = {};
+        (data.rework_logs || []).forEach((l: any) => {
+          if (!rm[l.order_id]) rm[l.order_id] = [];
+          rm[l.order_id].push(l);
+        });
+        setReworkMap(rm);
+      } catch (err: any) {
+        toast.error("Failed to load rework data");
+      } finally {
+        setLoading(false);
+      }
     };
     fetch();
   }, []);
@@ -48,6 +50,16 @@ export default function ReworkPage() {
       resp: latest.responsible_person || "—",
       date: new Date(latest.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
     };
+  };
+
+  const getStatus = (id: string) => {
+    const logs = reworkMap[id] || [];
+    if (logs.length === 0) return "—";
+    const hasP = logs.some((r: any) => r.status === "Pending");
+    const hasIP = logs.some((r: any) => r.status === "In Progress");
+    if (hasP) return "Pending";
+    if (hasIP) return "In Progress";
+    return "Solved";
   };
 
   const handleExport = (activeTab: string) => {
@@ -75,16 +87,6 @@ export default function ReworkPage() {
     exportDataToExcel(data, headers, `rework_export_${activeTab}.xlsx`);
   };
 
-  const getStatus = (id: string) => {
-    const logs = reworkMap[id] || [];
-    if (logs.length === 0) return "—";
-    const hasP = logs.some((r: any) => r.status === "Pending");
-    const hasIP = logs.some((r: any) => r.status === "In Progress");
-    if (hasP) return "Pending";
-    if (hasIP) return "In Progress";
-    return "Solved";
-  };
-
   const statusColor = (s: string) => {
     switch (s) {
       case "Pending": return "bg-warning/15 text-warning border-warning/20";
@@ -108,9 +110,9 @@ export default function ReworkPage() {
         </TableHeader>
         <TableBody>
           {loading ? (
-            <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
+            <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
           ) : list.length === 0 ? (
-            <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No orders</TableCell></TableRow>
+            <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No orders</TableCell></TableRow>
           ) : list.map((o) => (
             <TableRow key={o.id}>
               <TableCell>
