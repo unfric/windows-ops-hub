@@ -2,7 +2,7 @@ import { ReactNode, useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserRoles } from "@/hooks/useUserRoles";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import NotificationBell from "@/components/NotificationBell";
 import {
   LayoutDashboard,
@@ -58,14 +58,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!user) return;
-    supabase
-      .from("profiles")
-      .select("name")
-      .eq("user_id", user.id)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data?.name) setProfileName(data.name);
-      });
+    api.users.getProfile().then((data) => {
+      if (data?.name) setProfileName(data.name);
+    }).catch(console.error);
   }, [user]);
 
   const isAdmin = userRoles.includes("admin");

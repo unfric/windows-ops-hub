@@ -118,6 +118,17 @@ export const api = {
     },
 
     /**
+     * Fetches the current user's profile (name, avatar, etc).
+     */
+    getProfile: async () => {
+      const { data, error } = await supabase.functions.invoke('users-api', {
+        body: { action: 'get-profile' }
+      });
+      if (error) throw error;
+      return data;
+    },
+
+    /**
      * Lists all users (Admin only).
      */
     list: async () => {

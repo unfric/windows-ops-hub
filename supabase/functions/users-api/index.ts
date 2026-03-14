@@ -26,6 +26,8 @@ Deno.serve(async (req) => {
         return await handleGetProfile(supabase, user.id);
       case "list":
         return await handleList(user.id);
+      case "invite":
+        return await handleInvite(payload.data, user.id);
       case "update":
         return await handleUpdate(payload.id, payload.data);
       default:
@@ -48,18 +50,59 @@ async function handleGetRoles(supabase: any, userId: string) {
 }
 
 async function handleGetProfile(supabase: any, userId: string) {
-  // Use admin client to get full auth user metadata if needed, 
-  // but usually profiles table is enough.
-  const adminClient = getSupabaseAdmin();
-  const { data: { user }, error } = await adminClient.auth.admin.getUserById(userId);
-  
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("name, email, status")
+    .eq("user_id", userId)
+    .maybeSingle();
+
   if (error) return errorResponse(error);
-  return jsonResponse(user);
+  return jsonResponse(data);
+}
+
+async function handleInvite(data: any, requestorId: string) {
+  if (!data?.email) return errorResponse("Email is required");
+
+  const adminClient = getSupabaseAdmin();
+
+  // Security check
+  const { data: roles } = await adminClient.from("user_roles").select("role").eq("user_id", requestorId);
+  const isAdmin = roles?.some((r: any) => r.role === "admin" || r.role === "management");
+  if (!isAdmin) return errorResponse("Unauthorized", 403);
+
+  // 1. Invite the user via Supabase Auth
+  const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(data.email, {
+    data: { name: data.name || "" },
+  });
+  if (inviteError) return errorResponse(inviteError);
+
+  const newUserId = inviteData.user.id;
+
+  // 2. Create a profile row
+  const { error: profileError } = await adminClient.from("profiles").upsert({
+    user_id: newUserId,
+    email: data.email,
+    name: data.name || "",
+    status: "invited",
+    active: true,
+    invited_at: new Date().toISOString(),
+  }, { onConflict: "user_id" });
+  if (profileError) return errorResponse(profileError);
+
+  // 3. Assign initial roles
+  if (data.roles && data.roles.length > 0) {
+    const { error: rolesError } = await adminClient.from("user_roles").insert(
+      data.roles.map((role: string) => ({ user_id: newUserId, role }))
+    );
+    if (rolesError) return errorResponse(rolesError);
+  }
+
+  return jsonResponse({ success: true, user_id: newUserId });
 }
 
 async function handleList(requestorId: string) {
   const adminClient = getSupabaseAdmin();
-  
+
   // Verify requester is admin/management (security check)
   const { data: roles } = await adminClient.from("user_roles").select("role").eq("user_id", requestorId);
   const isAdmin = roles?.some((r: any) => r.role === "admin" || r.role === "management");

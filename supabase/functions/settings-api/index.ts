@@ -64,7 +64,7 @@ async function handleUpsert(table: string, data: any, userId: string) {
 
   const { data: result, error } = await adminClient
     .from(table)
-    .upsert({ ...data, updated_at: new Date().toISOString() })
+    .upsert(data)
     .select()
     .single();
 

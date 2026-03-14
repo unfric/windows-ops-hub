@@ -156,17 +156,18 @@ export default function GeneralSettingsPage() {
 
   useEffect(() => { fetchSettings(); }, []);
 
-  const save = async (key: string) => {
+  const save = async (key: string, explicitValue?: string) => {
     const setting = settings.find((s) => s.key === key);
+    const value = explicitValue !== undefined ? explicitValue : editValues[key];
     try {
       await api.settings.upsert("app_settings", { 
         id: setting?.id, 
         key, 
-        value: editValues[key] 
+        value 
       });
       toast.success("Setting saved");
       if (key === "theme_primary") {
-        applyTheme(editValues[key]);
+        applyTheme(value);
       }
       fetchSettings();
     } catch (err: any) {
@@ -212,7 +213,7 @@ export default function GeneralSettingsPage() {
                       key={c.value}
                       onClick={() => {
                         setEditValues({ ...editValues, theme_primary: c.value });
-                        save("theme_primary");
+                        save("theme_primary", c.value);
                       }}
                       className={cn(
                         "group relative flex flex-col items-center gap-1.5 p-2 rounded-lg border-2 transition-all",
