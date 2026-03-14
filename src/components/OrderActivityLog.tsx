@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import {
     Table,
     TableBody,
@@ -35,93 +35,17 @@ export default function OrderActivityLog({ orderId, module, refreshKey }: Props)
     useEffect(() => {
         const fetchLogs = async () => {
             setLoading(true);
-
-            // Step 1: Fetch activity logs WITHOUT any join (the FK relationship is not in the schema cache)
-            let query = (supabase.from("order_activity_log" as any) as any)
-                .select("id, timestamp, field_name, old_value, new_value, updated_by, module, order_id")
-                .eq("order_id", orderId);
-
-            if (Array.isArray(module)) {
-                query = query.in("module", module);
-            } else {
-                query = query.eq("module", module);
+            try {
+                const data = await api.logs.fetch(
+                    module === "Sales" ? "audit" : "activity",
+                    { order_id: orderId, module: module as string }
+                );
+                setLogs(data || []);
+            } catch (error: any) {
+                console.error("OrderActivityLog fetch error:", error);
+            } finally {
+                setLoading(false);
             }
-
-            const { data: activityData, error: actErr } = await query.order("timestamp", { ascending: false });
-            if (actErr) console.error("OrderActivityLog fetch error:", actErr);
-
-            // Step 2: Collect unique user IDs and look them up from profiles separately
-            const userIds = [...new Set(
-                (activityData || [])
-                    .map((l: any) => l.updated_by)
-                    .filter(Boolean)
-            )] as string[];
-
-            const userNameMap: Record<string, string> = {};
-            if (userIds.length > 0) {
-                const { data: profileData } = await (supabase.from("profiles" as any) as any)
-                    .select("user_id, name")
-                    .in("user_id", userIds);  // updated_by stores the auth user_id, match against profiles.user_id
-
-                (profileData || []).forEach((p: any) => {
-                    if (p.user_id && p.name) userNameMap[p.user_id] = p.name;
-                });
-            }
-
-            // Step 3: Map to final shape
-            let allLogs: LogEntry[] = (activityData || []).map((log: any) => ({
-                id: log.id,
-                timestamp: log.timestamp,
-                field_name: log.field_name,
-                old_value: log.old_value,
-                new_value: log.new_value,
-                updated_by: log.updated_by,
-                user_name: log.updated_by ? (userNameMap[log.updated_by] || "Unknown User") : "System",
-            }));
-
-            // Step 4: For "Sales" module also include the audit_log table entries
-            if (module === "Sales") {
-                const { data: auditData } = await (supabase.from("audit_log" as any) as any)
-                    .select("id, created_at, field, old_value, new_value, user_id")
-                    .eq("entity_id", orderId)
-                    .eq("entity_type", "orders")
-                    .order("created_at", { ascending: false });
-
-                if (auditData && auditData.length > 0) {
-                    // Collect user IDs from audit logs too
-                    const auditUserIds = [...new Set(
-                        auditData.map((a: any) => a.user_id).filter(Boolean)
-                    )] as string[];
-
-                    const auditUserNameMap: Record<string, string> = { ...userNameMap };
-                    const newIds = auditUserIds.filter(uid => !auditUserNameMap[uid]);
-                    if (newIds.length > 0) {
-                        const { data: auditProfiles } = await (supabase.from("profiles" as any) as any)
-                            .select("id, name")
-                            .in("id", newIds);
-                        (auditProfiles || []).forEach((p: any) => {
-                            if (p.id && p.name) auditUserNameMap[p.id] = p.name;
-                        });
-                    }
-
-                    const mappedAudit: LogEntry[] = auditData.map((a: any) => ({
-                        id: a.id,
-                        timestamp: a.created_at,
-                        field_name: a.field || "unknown",
-                        old_value: a.old_value,
-                        new_value: a.new_value,
-                        updated_by: a.user_id,
-                        user_name: a.user_id ? (auditUserNameMap[a.user_id] || "Unknown User") : "System",
-                    }));
-
-                    allLogs = [...allLogs, ...mappedAudit].sort((a, b) =>
-                        new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime()
-                    );
-                }
-            }
-
-            setLogs(allLogs);
-            setLoading(false);
         };
 
         fetchLogs();

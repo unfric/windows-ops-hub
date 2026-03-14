@@ -1,5 +1,6 @@
 import { corsHeaders } from "../_shared/cors.ts";
-import { verifyAdminOrManagement, createErrorResponse } from "../_shared/auth.ts";
+import { errorResponse } from "../_shared/response.ts";
+import { verifyUser, getSupabaseAdmin } from "../_shared/auth.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -7,15 +8,23 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const authResult = await verifyAdminOrManagement(req);
+    const authResult = await verifyUser(req);
     if ("error" in authResult) {
-      return createErrorResponse(authResult.error, authResult.status);
+      return errorResponse(authResult.error, authResult.status);
     }
-    const { adminClient } = authResult;
+    const { user, supabase } = authResult;
+    
+    // Check for admin role
+    const adminClient = getSupabaseAdmin();
+    const { data: roles } = await adminClient.from("user_roles").select("role").eq("user_id", user.id);
+    const roleNames = roles?.map((r: any) => r.role) || [];
+    if (!roleNames.includes("admin") && !roleNames.includes("management")) {
+      return errorResponse("Admin or Management access required", 403);
+    }
 
     const { orderId } = await req.json();
     if (!orderId) {
-      return createErrorResponse("Order ID is required", 400);
+      return errorResponse("Order ID is required", 400);
     }
 
     // 1. Fetch current order state for business logic validation
@@ -26,14 +35,14 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (fetchErr) throw fetchErr;
-    if (!order) return createErrorResponse("Order not found", 404);
+    if (!order) return errorResponse("Order not found", 404);
 
     // 2. Business Logic Validation
     if ((order.survey_done_windows || 0) > 0) {
-      return createErrorResponse("Cannot delete: Order has progressed to Survey module. Survey must be reverted back to 0 first.", 400);
+      return errorResponse("Cannot delete: Order has progressed to Survey module. Survey must be reverted back to 0 first.", 400);
     }
     if ((order.design_released_windows || 0) > 0) {
-      return createErrorResponse("Cannot delete: Order has progressed to Design module. Design must be reverted back to 0 first.", 400);
+      return errorResponse("Cannot delete: Order has progressed to Design module. Design must be reverted back to 0 first.", 400);
     }
 
     // Check for logs in production_logs
@@ -43,7 +52,7 @@ Deno.serve(async (req) => {
       .eq("order_id", orderId);
     
     if ((prodCount || 0) > 0) {
-      return createErrorResponse("Cannot delete: Order has production logs. Production logs must be deleted first.", 400);
+      return errorResponse("Cannot delete: Order has production logs. Production logs must be deleted first.", 400);
     }
 
     // Check for logs in payment_logs
@@ -53,7 +62,7 @@ Deno.serve(async (req) => {
       .eq("order_id", orderId);
     
     if ((paymentCount || 0) > 0) {
-      return createErrorResponse("Cannot delete: Order has payment logs. Finance must delete logs first.", 400);
+      return errorResponse("Cannot delete: Order has payment logs. Finance must delete logs first.", 400);
     }
 
     // 3. Atomically delete all child records
@@ -90,7 +99,7 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 
-  } catch (err: any) {
-    return createErrorResponse(err.message, 500);
+  } catch (error: any) {
+    return errorResponse(error.message, 500);
   }
 });

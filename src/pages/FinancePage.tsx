@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import { Link } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +29,7 @@ interface Order {
   approval_for_dispatch: string;
   dispatch_status: string;
   commercial_status: string;
+  design_released_windows: number;
 }
 
 interface PaymentLog {
@@ -70,65 +71,60 @@ export default function FinancePage() {
   const [shades, setShades] = useState<string[]>([]);
 
   const fetchData = async () => {
-    const [ordersRes, paymentsRes, prodLogsRes, dispatchLogsRes] = await Promise.all([
-      supabase.from("orders").select("*").order("created_at", { ascending: false }),
-      (supabase.from("payment_logs" as any) as any).select("order_id, amount, status"),
-      (supabase.from("production_logs" as any) as any).select("order_id, stage, windows_completed"),
-      (supabase.from("dispatch_logs" as any) as any).select("order_id, windows_dispatched"),
-    ]);
-    if (ordersRes.error) toast.error("Failed to load orders");
-    else setOrders((ordersRes.data as unknown as Order[]) || []);
+    try {
+      const data = await api.orders.list();
+      const rawOrders = (data.orders as unknown as Order[]) || [];
+      setOrders(rawOrders);
 
-    const logs = (paymentsRes.data || []) as PaymentLog[];
-    const map: Record<string, number> = {};
-    const drafts = new Set<string>();
-    for (const log of logs) {
-      if (log.status === "Confirmed") {
-        map[log.order_id] = (map[log.order_id] || 0) + Number(log.amount);
+      const logs = (data.payment_logs || []) as PaymentLog[];
+      const map: Record<string, number> = {};
+      const drafts = new Set<string>();
+      for (const log of logs) {
+        if (log.status === "Confirmed") {
+          map[log.order_id] = (map[log.order_id] || 0) + Number(log.amount);
+        }
+        if (log.status === "Draft") {
+          drafts.add(log.order_id);
+        }
       }
-      if (log.status === "Draft") {
-        drafts.add(log.order_id);
+      setPaymentMap(map);
+      setDraftOrderIds(drafts);
+
+      // Dispatch Status Aggregation
+      const dispatchedMap: Record<string, number> = {};
+      for (const d of (data.dispatch_logs || []) as any[]) {
+        dispatchedMap[d.order_id] = (dispatchedMap[d.order_id] || 0) + Number(d.windows_dispatched);
       }
-    }
-    setPaymentMap(map);
-    setDraftOrderIds(drafts);
 
-    // Dispatch Status Aggregation
-    const packedMap: Record<string, number> = {};
-    for (const p of (prodLogsRes.data || []) as any[]) {
-      if (p.stage === "Packed") {
-        packedMap[p.order_id] = (packedMap[p.order_id] || 0) + Number(p.windows_completed);
+      const dStatusMap: Record<string, string> = {};
+      for (const o of rawOrders) {
+        const atw = o.design_released_windows || 0;
+        const dispatched = dispatchedMap[o.id] || 0;
+
+        if (dispatched === 0) dStatusMap[o.id] = "Not Dispatched";
+        else if (dispatched < atw) dStatusMap[o.id] = "Partially Dispatched";
+        else dStatusMap[o.id] = "Fully Dispatched";
       }
+      setDispatchStatusMap(dStatusMap);
+    } catch (err: any) {
+      toast.error("Failed to load orders");
+    } finally {
+      setLoading(false);
     }
-
-    const dispatchedMap: Record<string, number> = {};
-    for (const d of (dispatchLogsRes.data || []) as any[]) {
-      dispatchedMap[d.order_id] = (dispatchedMap[d.order_id] || 0) + Number(d.windows_dispatched);
-    }
-
-    const dStatusMap: Record<string, string> = {};
-    for (const o of (ordersRes.data || []) as any[]) {
-      const atw = o.design_released_windows || 0;
-      const dispatched = dispatchedMap[o.id] || 0;
-
-      if (dispatched === 0) dStatusMap[o.id] = "Not Dispatched";
-      else if (dispatched < atw) dStatusMap[o.id] = "Partially Dispatched";
-      else dStatusMap[o.id] = "Fully Dispatched";
-    }
-    setDispatchStatusMap(dStatusMap);
-
-    setLoading(false);
   };
 
   const fetchFilterOptions = async () => {
-    const [sp, clr] = await Promise.all([
-      supabase.from("salespersons").select("name").eq("active", true).order("name"),
-      supabase.from("colour_shades").select("name").eq("active", true).order("name"),
-    ]);
-    setSalespersons((sp.data || []).map((d: any) => d.name));
-    setShades((clr.data || []).map((d: any) => d.name));
-    const uniqueOwners = [...new Set(orders.map((o) => o.dealer_name).filter(Boolean))].sort();
-    setOwners(uniqueOwners);
+    try {
+      const settings = await api.settings.list();
+      if (settings) {
+        setSalespersons(settings.salespersons?.map((s: any) => s.name) || []);
+        setShades(settings.colour_shades?.map((s: any) => s.name) || []);
+      }
+      const uniqueOwners = [...new Set(orders.map((o) => o.dealer_name).filter(Boolean))].sort();
+      setOwners(uniqueOwners);
+    } catch (err) {
+      console.error("Error fetching filter options:", err);
+    }
   };
 
   useEffect(() => { fetchData(); }, []);

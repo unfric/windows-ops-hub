@@ -1,23 +1,21 @@
 import { useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 
 export default function ThemeSync() {
   useEffect(() => {
     const fetchTheme = async () => {
       try {
-        const { data } = await supabase
-          .from("app_settings")
-          .select("value")
-          .eq("key", "theme_primary")
-          .maybeSingle();
+        const data = await api.settings.list();
+        const settings = data.app_settings || [];
+        const theme = settings.find((s: any) => s.key === "theme_primary");
 
-        if (data?.value) {
-          const color = data.value;
+        if (theme?.value) {
+          const color = theme.value;
           document.documentElement.style.setProperty('--primary', color);
           document.documentElement.style.setProperty('--ring', color);
         }
       } catch (err) {
-        console.error("Failed to sync theme from Supabase:", err);
+        console.error("Failed to sync theme from Pulse API:", err);
       }
     };
 

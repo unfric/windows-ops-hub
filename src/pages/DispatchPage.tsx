@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,34 +37,39 @@ export default function DispatchPage() {
 
   useEffect(() => {
     const fetchData = async () => {
-      const [ordersRes, prodLogsRes, dispLogsRes] = await Promise.all([
-        supabase.from("orders").select("id, order_name, dealer_name, order_type, quote_no, sales_order_no, colour_shade, salesperson, product_type, total_windows, design_released_windows, sqft, order_value, approval_for_dispatch").order("created_at", { ascending: false }),
-        (supabase.from("production_logs" as any) as any).select("order_id, stage, windows_completed"),
-        (supabase.from("dispatch_logs" as any) as any).select("order_id, windows_dispatched"),
-      ]);
+      try {
+        const data = await api.orders.list();
+        if (!data.orders) { setLoading(false); return; }
 
-      if (!ordersRes.data) { setLoading(false); return; }
-
-      const PackedMap: Record<string, number> = {};
-      ((prodLogsRes.data || []) as any[]).forEach((l: any) => {
-        if (l.stage === "Packed") PackedMap[l.order_id] = (PackedMap[l.order_id] || 0) + l.windows_completed;
-      });
-
-      const dispMap: Record<string, number> = {};
-      ((dispLogsRes.data || []) as any[]).forEach((d: any) => {
-        dispMap[d.order_id] = (dispMap[d.order_id] || 0) + d.windows_dispatched;
-      });
-
-      const mapped: OrderWithDispatch[] = (ordersRes.data as any[])
-        .filter((o) => (PackedMap[o.id] || 0) > 0 || (dispMap[o.id] || 0) > 0)
-        .map((o) => {
-          const Packed = PackedMap[o.id] || 0;
-          const disp = dispMap[o.id] || 0;
-          return { ...o, PackedTotal: Packed, dispatched: disp, balance: Packed - disp };
+        const PackedMap: Record<string, number> = {};
+        ((data.production_logs || []) as any[]).forEach((l: any) => {
+          if (l.stage === "Packed") PackedMap[l.order_id] = (PackedMap[l.order_id] || 0) + l.windows_completed;
         });
 
-      setOrders(mapped);
-      setLoading(false);
+        const dispMap: Record<string, number> = {};
+        ((data.dispatch_logs || []) as any[]).forEach((d: any) => {
+          dispMap[d.order_id] = (dispMap[d.order_id] || 0) + d.windows_dispatched;
+        });
+
+        const mapped: OrderWithDispatch[] = (data.orders as any[])
+          .filter((o) => (PackedMap[o.id] || 0) > 0 || (dispMap[o.id] || 0) > 0)
+          .map((o) => {
+            const Packed = PackedMap[o.id] || 0;
+            const disp = dispMap[o.id] || 0;
+            return {
+              ...o,
+              PackedTotal: Packed,
+              dispatched: disp,
+              balance: Packed - disp
+            };
+          });
+
+        setOrders(mapped);
+      } catch (err) {
+        console.error("Error fetching data:", err);
+      } finally {
+        setLoading(false);
+      }
     };
     fetchData();
   }, []);
@@ -121,9 +126,9 @@ export default function DispatchPage() {
         </TableHeader>
         <TableBody>
           {loading ? (
-            <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
+            <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
           ) : list.length === 0 ? (
-            <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No orders</TableCell></TableRow>
+            <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No orders</TableCell></TableRow>
           ) : (
             list.map((o) => (
               <TableRow key={o.id}>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { api } from "@/services/api";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -25,7 +26,7 @@ interface CreateOrderDialogProps {
 }
 
 export default function CreateOrderDialog({ open, onOpenChange, onCreated }: CreateOrderDialogProps) {
-  const [orderType, setOrderType] = useState<"Retail" | "Project">("Retail");
+  const [orderType, setOrderType] = useState<"Retail" | "Project" >("Retail");
   const [orderName, setOrderName] = useState("");
   const [lotName, setLotName] = useState("");
   const [orderOwner, setOrderOwner] = useState("");
@@ -53,22 +54,20 @@ export default function CreateOrderDialog({ open, onOpenChange, onCreated }: Cre
   useEffect(() => {
     if (!open) return;
     const fetchAll = async () => {
-      const [pn, dl, pc, cs, sp, opt, cst] = await Promise.all([
-        supabase.from("project_names" as any).select("*").eq("active", true).order("name") as any,
-        supabase.from("dealers").select("*").eq("active", true).order("name"),
-        supabase.from("project_client_names" as any).select("*").eq("active", true).order("name") as any,
-        supabase.from("colour_shades").select("*").eq("active", true).order("name"),
-        supabase.from("salespersons").select("*").eq("active", true).order("name"),
-        supabase.from("other_product_types" as any).select("*").eq("active", true).order("name") as any,
-        supabase.from("commercial_statuses" as any).select("*").eq("active", true).order("name") as any,
-      ]);
-      setProjectNames((pn.data as SettingsItem[]) || []);
-      setDealers((dl.data as SettingsItem[]) || []);
-      setProjectClients((pc.data as SettingsItem[]) || []);
-      setColourShades((cs.data as SettingsItem[]) || []);
-      setSalespersons((sp.data as SettingsItem[]) || []);
-      setProducts((opt.data as SettingsItem[]) || []);
-      setCommercialStatuses((cst.data as SettingsItem[]) || []);
+      try {
+        const settings = await api.settings.list();
+        if (settings) {
+          setProjectNames(settings.project_names || []);
+          setDealers(settings.dealers || []);
+          setProjectClients(settings.project_client_names || []);
+          setColourShades(settings.colour_shades || []);
+          setSalespersons(settings.salespersons || []);
+          setProducts(settings.other_product_types || []);
+          setCommercialStatuses(settings.commercial_statuses || []);
+        }
+      } catch (err) {
+        console.error("Error fetching settings:", err);
+      }
     };
     fetchAll();
   }, [open]);
@@ -104,67 +103,36 @@ export default function CreateOrderDialog({ open, onOpenChange, onCreated }: Cre
 
     const finalOrderName = orderType === "Project" ? `${orderName.trim()} - ${lotName.trim()}` : orderName.trim();
 
-    // Validate duplicate Project + Lot / Retail Order
-    const { data: existingName } = await supabase
-      .from("orders")
-      .select("id")
-      .eq("order_name", finalOrderName)
-      .maybeSingle();
-
-    if (existingName) return toast.error(`Order Name "${finalOrderName}" already exists`);
-
-    if (quoteNo.trim()) {
-      const { data: existing } = await supabase
-        .from("orders")
-        .select("id")
-        .eq("quote_no", quoteNo.trim())
-        .maybeSingle();
-      if (existing) return toast.error("Quotation Number already exists");
-    }
-
     setSubmitting(true);
-    const payload: Record<string, any> = {
-      order_type: orderType,
-      order_name: finalOrderName,
-      dealer_name: orderOwner,
-      quote_no: quoteNo.trim() || null,
-      colour_shade: colourShade || null,
-      salesperson: salesperson || null,
-      product_type: selectedProducts.join(", "),
-      other_product_type: null,
-      total_windows: Number(qty) || 0,
-      sqft: Number(sqft) || 0,
-      order_value: Number(orderValue) || 0,
-      advance_received: advanceReceived ? Number(advanceAmount) || 0 : 0,
-      commercial_status: commercialStatus || "Pipeline",
-    };
+    try {
+      const payload: Record<string, any> = {
+        order_type: orderType,
+        order_name: finalOrderName,
+        dealer_name: orderOwner,
+        quote_no: quoteNo.trim() || null,
+        colour_shade: colourShade || null,
+        salesperson: salesperson || null,
+        product_type: selectedProducts.join(", "),
+        total_windows: Number(qty) || 0,
+        sqft: Number(sqft) || 0,
+        order_value: Number(orderValue) || 0,
+        advance_received: advanceReceived ? Number(advanceAmount) || 0 : 0,
+        commercial_status: commercialStatus || "Pipeline",
+      };
 
-    const { data: inserted, error } = await supabase.from("orders").insert(payload).select("id").single();
-    if (error) {
+      const result = await api.orders.create(payload);
+      
+      if (result.order) {
+        toast.success("Order created");
+        resetForm();
+        onOpenChange(false);
+        onCreated();
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to create order");
+    } finally {
       setSubmitting(false);
-      toast.error(error.message);
-      return;
     }
-
-    // If advance received, create a Draft payment log entry
-    if (advanceReceived && Number(advanceAmount) > 0 && inserted) {
-      const { data: { user } } = await supabase.auth.getUser();
-      await (supabase.from("payment_logs" as any) as any).insert({
-        order_id: inserted.id,
-        amount: Number(advanceAmount),
-        payment_date: new Date().toISOString().split("T")[0],
-        payment_mode: null,
-        entered_by: user?.id || null,
-        source_module: "Sales",
-        status: "Draft",
-      });
-    }
-
-    setSubmitting(false);
-    toast.success("Order created");
-    resetForm();
-    onOpenChange(false);
-    onCreated();
   };
 
   return (

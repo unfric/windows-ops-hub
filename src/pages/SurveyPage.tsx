@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import { Link } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -60,16 +60,26 @@ export default function SurveyPage() {
   const [owners, setOwners] = useState<string[]>([]);
 
   const fetchData = async () => {
-    const { data, error } = await supabase.from("orders").select("*").order("created_at", { ascending: false });
-    if (error) toast.error("Failed to load orders");
-    else setOrders((data as unknown as Order[]) || []);
-    setLoading(false);
+    try {
+      const data = await api.orders.list();
+      setOrders((data.orders as unknown as Order[]) || []);
+    } catch (err: any) {
+      toast.error("Failed to load orders");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const fetchFilterOptions = async () => {
-    const { data: sp } = await supabase.from("salespersons").select("name").eq("active", true).order("name");
-    setSalespersons((sp || []).map((d: any) => d.name));
-    setOwners([...new Set(orders.map((o) => o.dealer_name).filter(Boolean))].sort());
+    try {
+      const settings = await api.settings.list();
+      if (settings) {
+        setSalespersons(settings.salespersons?.map((s: any) => s.name) || []);
+      }
+      setOwners([...new Set(orders.map((o) => o.dealer_name).filter(Boolean))].sort());
+    } catch (err) {
+      console.error("Error fetching filter options:", err);
+    }
   };
 
   useEffect(() => { fetchData(); }, []);

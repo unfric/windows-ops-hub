@@ -1,5 +1,7 @@
 import { corsHeaders } from "../_shared/cors.ts";
-import { verifyAdminOrManagement, createErrorResponse } from "../_shared/auth.ts";
+import { errorResponse } from "../_shared/response.ts";
+import { getSupabaseAdmin } from "../_shared/auth.ts";
+import { verifyUser } from "../_shared/auth.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -7,17 +9,25 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const authResult = await verifyAdminOrManagement(req);
+    const authResult = await verifyUser(req);
     if ("error" in authResult) {
-      return createErrorResponse(authResult.error, authResult.status);
+      return errorResponse(authResult.error, authResult.status);
     }
-    const { adminClient } = authResult;
+    const { user, supabase } = authResult;
+    
+    // Check for admin role
+    const adminClient = getSupabaseAdmin();
+    const { data: roles } = await adminClient.from("user_roles").select("role").eq("user_id", user.id);
+    const roleNames = roles?.map((r: any) => r.role) || [];
+    if (!roleNames.includes("admin") && !roleNames.includes("management")) {
+      return errorResponse("Admin or Management access required", 403);
+    }
 
     const { email, name, roles, action } = await req.json();
 
     // Handle resend invite
     if (action === "resend_invite") {
-      if (!email) return createErrorResponse("Email is required", 400);
+      if (!email) return errorResponse("Email is required", 400);
 
       const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
       await adminClient.auth.admin.generateLink({
@@ -33,7 +43,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (!email) return createErrorResponse("Email is required", 400);
+    if (!email) return errorResponse("Email is required", 400);
 
     // Check if user already exists
     const { data: existingUsers } = await adminClient.auth.admin.listUsers();
@@ -58,7 +68,7 @@ Deno.serve(async (req) => {
         user_metadata: { name: name || "" },
       });
 
-      if (createError) return createErrorResponse(createError.message, 400);
+      if (createError) return errorResponse(createError.message, 400);
 
       userId = newUser.user.id;
       isNewUser = true;
@@ -119,6 +129,6 @@ Deno.serve(async (req) => {
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err: any) {
-    return createErrorResponse(err.message, 500);
+    return errorResponse(err.message, 500);
   }
 });

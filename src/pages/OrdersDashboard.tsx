@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +19,7 @@ import { importOrdersFromFile, exportOrdersToExcel, downloadImportTemplate } fro
 import CreateOrderDialog from "@/components/CreateOrderDialog";
 import EditOrderDialog from "@/components/EditOrderDialog";
 import { useUserRoles } from "@/hooks/useUserRoles";
+import { api } from "@/services/api";
 
 // ── Types ──
 
@@ -262,91 +262,95 @@ export default function OrdersDashboard() {
   const canEdit = hasRole("sales") || hasRole("admin") || hasRole("management");
 
   const fetchAll = async () => {
-    const [ordersRes, paymentsRes, prodLogsRes, dispatchLogsRes, installLogsRes, reworkRes] = await Promise.all([
-      supabase.from("orders").select("*").order("created_at", { ascending: false }),
-      supabase.from("payment_logs").select("order_id, amount, status"),
-      supabase.from("production_logs").select("order_id, stage, windows_completed"),
-      supabase.from("dispatch_logs").select("order_id, windows_dispatched"),
-      supabase.from("installation_logs").select("order_id, windows_installed"),
-      supabase.from("rework_logs").select("order_id, status, rework_qty"),
-    ]);
+    try {
+      const data = await api.orders.list();
+      
+      const rawOrders = (data.orders || []) as unknown as Order[];
+      setOrders(rawOrders);
 
-    if (ordersRes.error) { toast.error("Failed to load orders"); return; }
-    const rawOrders = (ordersRes.data || []) as unknown as Order[];
-    setOrders(rawOrders);
-
-    // Payment map (confirmed only)
-    const paymentMap: Record<string, number> = {};
-    for (const p of (paymentsRes.data || []) as any[]) {
-      if (p.status === "Confirmed") paymentMap[p.order_id] = (paymentMap[p.order_id] || 0) + Number(p.amount);
-    }
-
-    // Production packed map
-    const packedMap: Record<string, number> = {};
-    for (const p of (prodLogsRes.data || []) as any[]) {
-      if (p.stage === "Packed") packedMap[p.order_id] = (packedMap[p.order_id] || 0) + Number(p.windows_completed);
-    }
-
-    // Dispatch map
-    const dispatchMap: Record<string, number> = {};
-    for (const d of (dispatchLogsRes.data || []) as any[]) {
-      dispatchMap[d.order_id] = (dispatchMap[d.order_id] || 0) + Number(d.windows_dispatched);
-    }
-
-    // Installation map
-    const installMap: Record<string, number> = {};
-    for (const i of (installLogsRes.data || []) as any[]) {
-      installMap[i.order_id] = (installMap[i.order_id] || 0) + Number(i.windows_installed);
-    }
-
-    // Rework map
-    const reworkOpenMap: Record<string, number> = {};
-    const reworkTotalMap: Record<string, number> = {};
-    for (const r of (reworkRes.data || []) as any[]) {
-      reworkTotalMap[r.order_id] = (reworkTotalMap[r.order_id] || 0) + 1;
-      if (r.status === "Pending" || r.status === "In Progress") {
-        reworkOpenMap[r.order_id] = (reworkOpenMap[r.order_id] || 0) + 1;
+      // Payment map (confirmed only)
+      const paymentMap: Record<string, number> = {};
+      for (const p of (data.payment_logs || []) as any[]) {
+        if (p.status === "Confirmed") paymentMap[p.order_id] = (paymentMap[p.order_id] || 0) + Number(p.amount);
       }
+
+      // Production packed map
+      const packedMap: Record<string, number> = {};
+      for (const p of (data.production_logs || []) as any[]) {
+        if (p.stage === "Packed") packedMap[p.order_id] = (packedMap[p.order_id] || 0) + Number(p.windows_completed);
+      }
+
+      // Dispatch map
+      const dispatchMap: Record<string, number> = {};
+      for (const d of (data.dispatch_logs || []) as any[]) {
+        dispatchMap[d.order_id] = (dispatchMap[d.order_id] || 0) + Number(d.windows_dispatched);
+      }
+
+      // Installation map
+      const installMap: Record<string, number> = {};
+      for (const i of (data.installation_logs || []) as any[]) {
+        installMap[i.order_id] = (installMap[i.order_id] || 0) + Number(i.windows_installed);
+      }
+
+      // Rework map
+      const reworkOpenMap: Record<string, number> = {};
+      const reworkTotalMap: Record<string, number> = {};
+      for (const r of (data.rework_logs || []) as any[]) {
+        reworkTotalMap[r.order_id] = (reworkTotalMap[r.order_id] || 0) + 1;
+        if (r.status === "Pending" || r.status === "In Progress") {
+          reworkOpenMap[r.order_id] = (reworkOpenMap[r.order_id] || 0) + 1;
+        }
+      }
+
+      // Aggregate
+      const agg: AggregatedOrder[] = rawOrders.map((o) => {
+        const receipt = paymentMap[o.id] || 0;
+        const packed = packedMap[o.id] || 0;
+        const dispatched = dispatchMap[o.id] || 0;
+        const installed = installMap[o.id] || 0;
+        const openRework = reworkOpenMap[o.id] || 0;
+        const totalRework = reworkTotalMap[o.id] || 0;
+        const atw = o.design_released_windows || 0;
+
+        const partial: AggregatedOrder = {
+          ...o,
+          receipt,
+          balance: Number(o.order_value) - receipt,
+          surveyDone: o.survey_done_windows || 0,
+          designReleased: o.design_released_windows || 0,
+          productionPacked: packed,
+          atw,
+          dispatchedWindows: dispatched,
+          installedWindows: installed,
+          reworkOpenCount: openRework,
+          reworkTotalCount: totalRework,
+          materialsStatus: getMaterialsStatus(o),
+          dispatchLabel: getDispatchLabel(dispatched, atw),
+          nextAction: "",
+        };
+        partial.nextAction = getNextAction(partial);
+        return partial;
+      });
+
+      setAggregated(agg);
+    } catch (err: any) {
+      console.error(err);
+      toast.error("Failed to load orders: " + (err.message || "Unknown error"));
+    } finally {
+      setLoading(false);
     }
-
-    // Aggregate
-    const agg: AggregatedOrder[] = rawOrders.map((o) => {
-      const receipt = paymentMap[o.id] || 0;
-      const packed = packedMap[o.id] || 0;
-      const dispatched = dispatchMap[o.id] || 0;
-      const installed = installMap[o.id] || 0;
-      const openRework = reworkOpenMap[o.id] || 0;
-      const totalRework = reworkTotalMap[o.id] || 0;
-      const atw = o.design_released_windows || 0;
-
-      const partial: AggregatedOrder = {
-        ...o,
-        receipt,
-        balance: Number(o.order_value) - receipt,
-        surveyDone: o.survey_done_windows || 0,
-        designReleased: o.design_released_windows || 0,
-        productionPacked: packed,
-        atw,
-        dispatchedWindows: dispatched,
-        installedWindows: installed,
-        reworkOpenCount: openRework,
-        reworkTotalCount: totalRework,
-        materialsStatus: getMaterialsStatus(o),
-        dispatchLabel: getDispatchLabel(dispatched, atw),
-        nextAction: "",
-      };
-      partial.nextAction = getNextAction(partial);
-      return partial;
-    });
-
-    setAggregated(agg);
-    setLoading(false);
   };
 
   const fetchFilterOptions = async () => {
-    const sp = await supabase.from("salespersons").select("name").eq("active", true).order("name");
-    setSalespersons((sp.data || []).map((d: any) => d.name));
-    setOwners([...new Set(orders.map((o) => o.dealer_name).filter(Boolean))].sort());
+    try {
+      const settings = await api.settings.list();
+      if (settings) {
+        setSalespersons(settings.salespersons?.map((s: any) => s.name) || []);
+      }
+      setOwners([...new Set(orders.map((o) => o.dealer_name).filter(Boolean))].sort());
+    } catch (err) {
+      console.error("Error fetching filter options:", err);
+    }
   };
 
   useEffect(() => { fetchAll(); }, []);

@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 
 /** Column mapping: Excel header → DB field */
 const FIELD_MAP: Record<string, string> = {
@@ -40,12 +40,6 @@ const FIELD_MAP: Record<string, string> = {
 
 const IMPORT_HEADERS = Object.keys(FIELD_MAP);
 
-const EXPORT_HEADERS = [
-  "Order Type", "Order Name", "Commercial Status", "Order Owner", "Quotation No", "SO No",
-  "Colour Shade", "Salesperson", "Product Type", "No of Windows", "Avl to Work",
-  "Sqft", "Order Value", "Receipt", "Balance", "Dispatch Status",
-];
-
 interface ImportResult {
   created: number;
   updated: number;
@@ -59,6 +53,15 @@ export async function importOrdersFromFile(file: File): Promise<ImportResult> {
   const rows = XLSX.utils.sheet_to_json<Record<string, any>>(ws);
 
   const result: ImportResult = { created: 0, updated: 0, errors: [] };
+
+  // Fetch existing orders to check for duplicates
+  let existingOrders: any[] = [];
+  try {
+    const data = await api.orders.list();
+    existingOrders = data.orders || [];
+  } catch (err) {
+    console.error("Error fetching existing orders for import:", err);
+  }
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -94,36 +97,28 @@ export async function importOrdersFromFile(file: File): Promise<ImportResult> {
     }
 
     // Check if order exists by quote_no
-    if (record.quote_no) {
-      const { data: existing } = await supabase
-        .from("orders")
-        .select("id")
-        .eq("quote_no", record.quote_no)
-        .maybeSingle();
+    const existing = record.quote_no ? existingOrders.find(o => o.quote_no === record.quote_no) : null;
 
+    try {
       if (existing) {
-        const { error } = await supabase
-          .from("orders")
-          .update(record)
-          .eq("id", existing.id);
-        if (error) result.errors.push(`Row ${i + 2}: ${error.message}`);
-        else result.updated++;
-        continue;
+        await api.orders.update(existing.id, record);
+        result.updated++;
+      } else {
+        // Create new
+        if (!record.order_name) {
+          result.errors.push(`Row ${i + 2}: Order Name is required for new orders`);
+          continue;
+        }
+        if (!record.dealer_name) record.dealer_name = "";
+        if (!record.order_type) record.order_type = "Retail";
+        if (!record.commercial_status) record.commercial_status = "Pipeline";
+
+        await api.orders.create(record);
+        result.created++;
       }
+    } catch (err: any) {
+      result.errors.push(`Row ${i + 2}: ${err.message || "Unknown error"}`);
     }
-
-    // Create new
-    if (!record.order_name) {
-      result.errors.push(`Row ${i + 2}: Order Name is required for new orders`);
-      continue;
-    }
-    if (!record.dealer_name) record.dealer_name = "";
-    if (!record.order_type) record.order_type = "Retail";
-    if (!record.commercial_status) record.commercial_status = "Pipeline";
-
-    const { error } = await supabase.from("orders").insert(record);
-    if (error) result.errors.push(`Row ${i + 2}: ${error.message}`);
-    else result.created++;
   }
 
   return result;

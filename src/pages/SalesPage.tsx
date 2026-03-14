@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import { Link } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -91,71 +91,69 @@ export default function SalesPage() {
   const [editOrderId, setEditOrderId] = useState<string | null>(null);
 
   const fetchData = async () => {
-    const [ordersRes, reworkRes, paymentRes, prodLogsRes, dispatchLogsRes] = await Promise.all([
-      supabase.from("orders").select("*").order("created_at", { ascending: false }),
-      supabase.from("rework_logs").select("order_id, rework_qty, rework_issue, reported_at").order("reported_at", { ascending: false }),
-      supabase.from("payment_logs").select("order_id, amount").eq("status", "Confirmed"),
-      (supabase.from("production_logs" as any) as any).select("order_id, stage, windows_completed"),
-      (supabase.from("dispatch_logs" as any) as any).select("order_id, windows_dispatched"),
-    ]);
-    if (ordersRes.error) toast.error("Failed to load orders");
-    else setOrders((ordersRes.data as unknown as Order[]) || []);
+    try {
+      const data = await api.orders.list();
+      const rawOrders = (data.orders as unknown as Order[]) || [];
+      setOrders(rawOrders);
 
-    // Rework map
-    const logs = reworkRes.data || [];
-    const rMap: Record<string, ReworkInfo> = {};
-    for (const log of logs) {
-      if (!rMap[log.order_id]) {
-        rMap[log.order_id] = { totalQty: 0, latestIssue: log.rework_issue };
+      // Rework map
+      const rLogs = data.rework_logs || [];
+      const rMap: Record<string, ReworkInfo> = {};
+      for (const log of rLogs) {
+        if (!rMap[log.order_id]) {
+          rMap[log.order_id] = { totalQty: 0, latestIssue: log.rework_issue };
+        }
+        rMap[log.order_id].totalQty += Number(log.rework_qty);
       }
-      rMap[log.order_id].totalQty += Number(log.rework_qty);
-    }
-    setReworkMap(rMap);
+      setReworkMap(rMap);
 
-    // Receipt map (sum of confirmed payments)
-    const payments = paymentRes.data || [];
-    const pMap: Record<string, number> = {};
-    for (const p of payments) {
-      pMap[p.order_id] = (pMap[p.order_id] || 0) + Number(p.amount);
-    }
-    setReceiptMap(pMap);
-
-    // Dispatch Status Aggregation
-    const packedMap: Record<string, number> = {};
-    for (const p of (prodLogsRes.data || []) as any[]) {
-      if (p.stage === "Packed") {
-        packedMap[p.order_id] = (packedMap[p.order_id] || 0) + Number(p.windows_completed);
+      // Receipt map
+      const payments = data.payment_logs || [];
+      const pMap: Record<string, number> = {};
+      for (const p of payments) {
+        if (p.status === "Confirmed") {
+          pMap[p.order_id] = (pMap[p.order_id] || 0) + Number(p.amount);
+        }
       }
+      setReceiptMap(pMap);
+
+      // Dispatch labels
+      const atwMap: Record<string, number> = {};
+      rawOrders.forEach(o => atwMap[o.id] = o.design_released_windows || 0);
+
+      const dispatchedMap: Record<string, number> = {};
+      for (const d of (data.dispatch_logs || []) as any[]) {
+        dispatchedMap[d.order_id] = (dispatchedMap[d.order_id] || 0) + Number(d.windows_dispatched);
+      }
+
+      const dStatusMap: Record<string, string> = {};
+      for (const o of rawOrders) {
+        const atw = atwMap[o.id];
+        const dispatched = dispatchedMap[o.id] || 0;
+        if (dispatched === 0) dStatusMap[o.id] = "Not Dispatched";
+        else if (dispatched < atw) dStatusMap[o.id] = "Partially Dispatched";
+        else dStatusMap[o.id] = "Fully Dispatched";
+      }
+      setDispatchStatusMap(dStatusMap);
+    } catch (err: any) {
+      toast.error("Failed to load orders");
+    } finally {
+      setLoading(false);
     }
-
-    const dispatchedMap: Record<string, number> = {};
-    for (const d of (dispatchLogsRes.data || []) as any[]) {
-      dispatchedMap[d.order_id] = (dispatchedMap[d.order_id] || 0) + Number(d.windows_dispatched);
-    }
-
-    const dStatusMap: Record<string, string> = {};
-    for (const o of (ordersRes.data || []) as any[]) {
-      const atw = o.design_released_windows || 0;
-      const dispatched = dispatchedMap[o.id] || 0;
-
-      if (dispatched === 0) dStatusMap[o.id] = "Not Dispatched";
-      else if (dispatched < atw) dStatusMap[o.id] = "Partially Dispatched";
-      else dStatusMap[o.id] = "Fully Dispatched";
-    }
-    setDispatchStatusMap(dStatusMap);
-
-    setLoading(false);
   };
 
   const fetchFilterOptions = async () => {
-    const [sp, cs] = await Promise.all([
-      supabase.from("salespersons").select("name").eq("active", true).order("name"),
-      supabase.from("commercial_statuses").select("name").eq("active", true).order("name"),
-    ]);
-    setSalespersons((sp.data || []).map((d: any) => d.name));
-    setCommercialStatuses((cs.data || []).map((d: any) => d.name));
-    const uniqueOwners = [...new Set(orders.map((o) => o.dealer_name).filter(Boolean))].sort();
-    setOwners(uniqueOwners);
+    try {
+      const settings = await api.settings.list();
+      if (settings) {
+        setSalespersons(settings.salespersons?.map((s: any) => s.name) || []);
+        setCommercialStatuses(settings.commercial_statuses?.map((s: any) => s.name) || []);
+      }
+      const uniqueOwners = [...new Set(orders.map((o) => o.dealer_name).filter(Boolean))].sort();
+      setOwners(uniqueOwners);
+    } catch (err) {
+      console.error("Error fetching filter options:", err);
+    }
   };
 
   useEffect(() => { fetchData(); }, []);
@@ -226,7 +224,6 @@ export default function SalesPage() {
     exportDataToExcel(data, headers, `sales_export_${tab}.xlsx`);
   };
 
-  // Compute "Available to Work" = survey_done - design_released (simplistic)
   const getAvlToWork = (o: Order) => {
     return o.design_released_windows;
   };

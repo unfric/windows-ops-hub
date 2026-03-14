@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -43,27 +43,28 @@ export default function ProductionDashboard() {
 
   useEffect(() => {
     const fetchData = async () => {
-      const [ordersRes, logsRes] = await Promise.all([
-        supabase.from("orders").select("id, order_name, dealer_name, order_type, quote_no, sales_order_no, colour_shade, salesperson, product_type, total_windows, design_released_windows, sqft, order_value, approval_for_production, hardware_availability, extrusion_availability, glass_availability, coated_extrusion_availability").order("created_at", { ascending: false }),
-        supabase.from("production_logs" as any).select("order_id, stage, windows_completed"),
-      ]);
+      try {
+        const data = await api.orders.list();
+        if (!data.orders) { setLoading(false); return; }
 
-      if (!ordersRes.data) { setLoading(false); return; }
+        const logs = (data.production_logs || []) as any[];
+        const logMap: Record<string, Record<string, number>> = {};
+        logs.forEach((l: any) => {
+          if (!logMap[l.order_id]) logMap[l.order_id] = {};
+          logMap[l.order_id][l.stage] = (logMap[l.order_id][l.stage] || 0) + l.windows_completed;
+        });
 
-      const logs = (logsRes.data || []) as any[];
-      const logMap: Record<string, Record<string, number>> = {};
-      logs.forEach((l: any) => {
-        if (!logMap[l.order_id]) logMap[l.order_id] = {};
-        logMap[l.order_id][l.stage] = (logMap[l.order_id][l.stage] || 0) + l.windows_completed;
-      });
+        const mapped: OrderWithProduction[] = (data.orders as any[]).map((o) => ({
+          ...o,
+          stageTotals: logMap[o.id] || {},
+        }));
 
-      const mapped: OrderWithProduction[] = (ordersRes.data as any[]).map((o) => ({
-        ...o,
-        stageTotals: logMap[o.id] || {},
-      }));
-
-      setOrders(mapped);
-      setLoading(false);
+        setOrders(mapped);
+      } catch (err: any) {
+        toast.error("Failed to load production data");
+      } finally {
+        setLoading(false);
+      }
     };
     fetchData();
   }, []);

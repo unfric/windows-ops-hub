@@ -24,24 +24,31 @@ interface NotifyRoleParams {
  * Send an in-app notification to all users with a specific role.
  */
 export async function notifyRole({ role, title, message, type = "info", entityType, entityId }: NotifyRoleParams) {
-  // Get all user IDs with this role
-  const { data: roleUsers } = await supabase
-    .from("user_roles")
-    .select("user_id")
-    .eq("role", role as any);
+  try {
+    // We keep notifyRole as is for now as it's often called from other client-side logic,
+    // but in a full migration, this should also move to a notification-api edge function.
+    // For now, let's keep it but ideally we should move this to the backend.
+    
+    const { data: roleUsers } = await supabase
+      .from("user_roles")
+      .select("user_id")
+      .eq("role", role as any);
 
-  if (!roleUsers || roleUsers.length === 0) return;
+    if (!roleUsers || roleUsers.length === 0) return;
 
-  const notifications = roleUsers.map((r) => ({
-    user_id: r.user_id,
-    title,
-    message,
-    type,
-    entity_type: entityType || null,
-    entity_id: entityId || null,
-  }));
+    const notifications = roleUsers.map((r) => ({
+      user_id: r.user_id,
+      title,
+      message,
+      type,
+      entity_type: entityType || null,
+      entity_id: entityId || null,
+    }));
 
-  await supabase.from("notifications" as any).insert(notifications);
+    await supabase.from("notifications" as any).insert(notifications);
+  } catch (err) {
+    console.error("Failed to notify role:", err);
+  }
 }
 
 /**

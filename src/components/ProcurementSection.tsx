@@ -1,20 +1,20 @@
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { logActivity } from "@/lib/activityLog";
+import { cn } from "@/lib/utils";
 
-const PO_STATUSES = ["Pending PO", "PO Placed", "Delivered", "Not Required"];
-const COATING_STATUSES = ["Pending Coating", "Sent to Coating", "Delivered", "Not Required"];
+const STATUS_VALUES = ["Pending PO", "PO Placed", "Delivered", "Not Required"];
+const COATING_VALUES = ["Pending Coating", "Sent to Coating", "Delivered", "Not Required"];
 
-const PO_FIELDS = [
-  { label: "Hardware PO", field: "hardware_po_status", dateField: "hardware_delivery_date", statuses: PO_STATUSES },
-  { label: "Extrusion PO", field: "extrusion_po_status", dateField: "extrusion_delivery_date", statuses: PO_STATUSES },
-  { label: "Glass PO", field: "glass_po_status", dateField: "glass_delivery_date", statuses: PO_STATUSES },
-  { label: "Sent to Coating", field: "coating_status", dateField: "coating_delivery_date", statuses: COATING_STATUSES },
+const FIELDS = [
+  { label: "Hardware PO", field: "hardware_po_status", date_field: "hardware_delivery_date", statuses: STATUS_VALUES },
+  { label: "Extrusion PO", field: "extrusion_po_status", date_field: "extrusion_delivery_date", statuses: STATUS_VALUES },
+  { label: "Glass PO", field: "glass_po_status", date_field: "glass_delivery_date", statuses: STATUS_VALUES },
+  { label: "Sent to Coating", field: "coating_status", date_field: "coating_delivery_date", statuses: COATING_VALUES },
 ];
 
 interface ProcurementSectionProps {
@@ -24,36 +24,31 @@ interface ProcurementSectionProps {
   readOnly?: boolean;
 }
 
-import { cn } from "@/lib/utils";
-
 export default function ProcurementSection({ orderId, order, onRefresh, readOnly }: ProcurementSectionProps) {
-  const updateField = async (field: string, value: string | null) => {
+  const updateField = async (field: string, value: any) => {
     if (readOnly) return;
-    const oldValue = order[field];
-    if (String(oldValue ?? "") === String(value ?? "")) return;
+    try {
+      // 1. Update main field
+      await api.orders.updateField(orderId, field, value, "Procurement");
 
-    // Unified Auto-sync: 
-    // Since Procurement and Store now share exactly the same values,
-    // push whatever Procurement sets here directly over to Store.
-    const updates: Record<string, any> = { [field]: value };
-    const storeFieldMap: Record<string, string> = {
-      hardware_po_status: "hardware_availability",
-      extrusion_po_status: "extrusion_availability",
-      glass_po_status: "glass_availability",
-      coating_status: "coated_extrusion_availability",
-    };
+      // 2. Unified Auto-sync to Store if necessary
+      const storeFieldMap: Record<string, string> = {
+        hardware_po_status: "hardware_availability",
+        extrusion_po_status: "extrusion_availability",
+        glass_po_status: "glass_availability",
+        coating_status: "coated_extrusion_availability",
+      };
 
-    const storeField = storeFieldMap[field];
-    if (storeField && order[storeField] !== value) {
-      updates[storeField] = value;
-      await logActivity({ orderId, module: "Procurement -> Store AutoSync", fieldName: storeField, oldValue: String(order[storeField] ?? ""), newValue: String(value ?? "") });
+      const storeField = storeFieldMap[field];
+      if (storeField && order[storeField] !== value) {
+        await api.orders.updateField(orderId, storeField, value, "Procurement -> Store AutoSync");
+      }
+
+      toast.success("Updated");
+      onRefresh();
+    } catch (error: any) {
+      toast.error(error.message);
     }
-
-    const { error } = await supabase.from("orders").update(updates as any).eq("id", orderId);
-    if (error) { toast.error(error.message); return; }
-    await logActivity({ orderId, module: "Procurement", fieldName: field, oldValue: String(oldValue ?? ""), newValue: String(value ?? "") });
-    toast.success("Updated");
-    onRefresh();
   };
 
   return (
@@ -63,12 +58,16 @@ export default function ProcurementSection({ orderId, order, onRefresh, readOnly
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {PO_FIELDS.map((f) => {
+          {FIELDS.map((f) => {
             return (
               <div key={f.field} className="space-y-2">
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">{f.label}</Label>
-                  <Select disabled={readOnly} value={order[f.field] || f.statuses[0]} onValueChange={(v) => updateField(f.field, v)}>
+                  <Select 
+                    disabled={readOnly} 
+                    value={order[f.field] || f.statuses[0]} 
+                    onValueChange={(v) => updateField(f.field, v)}
+                  >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {f.statuses.map((s) => {
@@ -76,7 +75,7 @@ export default function ProcurementSection({ orderId, order, onRefresh, readOnly
                         let tooltipText = "";
 
                         if (f.field === "coating_status" && (s === "Sent to Coating" || s === "Delivered")) {
-                          const hasExtrusion = order.extrusion_availability === "Yes" || order.extrusion_availability === "Delivered";
+                          const hasExtrusion = order.extrusion_availability === "In Stock / Available";
                           if (!hasExtrusion) {
                             isDisabledOption = true;
                             tooltipText = " (Req. Extrusion in Store)";
@@ -97,10 +96,10 @@ export default function ProcurementSection({ orderId, order, onRefresh, readOnly
                     <Label className="text-xs text-muted-foreground">Delivery By</Label>
                     <Input
                       type="date"
-                      defaultValue={order[f.dateField] || ""}
+                      defaultValue={order[f.date_field] || ""}
                       readOnly={readOnly}
                       className={cn(readOnly && "bg-muted")}
-                      onBlur={(e) => updateField(f.dateField, e.target.value || null)}
+                      onBlur={(e) => updateField(f.date_field, e.target.value || null)}
                     />
                   </div>
                 )}

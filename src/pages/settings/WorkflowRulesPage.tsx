@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,25 +30,35 @@ export default function WorkflowRulesPage() {
   const [editValues, setEditValues] = useState<Record<string, string>>({});
 
   const fetchSettings = async () => {
-    const { data } = await (supabase.from("app_settings" as any).select("*") as any);
-    const items = (data as AppSetting[]) || [];
-    setSettings(items);
-    const vals: Record<string, string> = {};
-    items.forEach((s) => { vals[s.key] = s.value; });
-    setEditValues(vals);
-    setLoading(false);
+    try {
+      const data = await api.settings.list();
+      const items = (data.app_settings as AppSetting[]) || [];
+      setSettings(items);
+      const vals: Record<string, string> = {};
+      items.forEach((s) => { vals[s.key] = s.value; });
+      setEditValues(vals);
+    } catch (err) {
+      console.error("Error fetching app settings:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { fetchSettings(); }, []);
 
   const save = async (key: string) => {
     const setting = settings.find((s) => s.key === key);
-    if (!setting) return;
-    const { error } = await (supabase.from("app_settings" as any) as any)
-      .update({ value: editValues[key], updated_at: new Date().toISOString() })
-      .eq("id", setting.id);
-    if (error) toast.error(error.message);
-    else toast.success("Rule saved");
+    try {
+      await api.settings.upsert("app_settings", { 
+        id: setting?.id, 
+        key, 
+        value: editValues[key] 
+      });
+      toast.success("Rule saved");
+      fetchSettings();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save rule");
+    }
   };
 
   if (loading) return <p className="text-sm text-muted-foreground">Loading...</p>;

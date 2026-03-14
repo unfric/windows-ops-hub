@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -11,7 +11,6 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { logActivity } from "@/lib/activityLog";
 
 interface SettingsItem { id: string; name: string; active: boolean; }
 
@@ -65,22 +64,20 @@ export default function EditOrderDialog({ open, onOpenChange, onUpdated, order }
     setCommercialStatus(order.commercial_status || "");
 
     const fetchAll = async () => {
-      const [pn, dl, pc, cs, sp, opt, cst] = await Promise.all([
-        supabase.from("project_names" as any).select("*").eq("active", true).order("name") as any,
-        supabase.from("dealers").select("*").eq("active", true).order("name"),
-        supabase.from("project_client_names" as any).select("*").eq("active", true).order("name") as any,
-        supabase.from("colour_shades").select("*").eq("active", true).order("name"),
-        supabase.from("salespersons").select("*").eq("active", true).order("name"),
-        supabase.from("other_product_types" as any).select("*").eq("active", true).order("name") as any,
-        supabase.from("commercial_statuses" as any).select("*").eq("active", true).order("name") as any,
-      ]);
-      setProjectNames((pn.data as SettingsItem[]) || []);
-      setDealers((dl.data as SettingsItem[]) || []);
-      setProjectClients((pc.data as SettingsItem[]) || []);
-      setColourShades((cs.data as SettingsItem[]) || []);
-      setSalespersons((sp.data as SettingsItem[]) || []);
-      setProducts((opt.data as SettingsItem[]) || []);
-      setCommercialStatuses((cst.data as SettingsItem[]) || []);
+      try {
+        const settings = await api.settings.list();
+        if (settings) {
+          setProjectNames(settings.project_names || []);
+          setDealers(settings.dealers || []);
+          setProjectClients(settings.project_client_names || []);
+          setColourShades(settings.colour_shades || []);
+          setSalespersons(settings.salespersons || []);
+          setProducts(settings.other_product_types || []);
+          setCommercialStatuses(settings.commercial_statuses || []);
+        }
+      } catch (err) {
+        console.error("Error fetching settings:", err);
+      }
     };
     fetchAll();
   }, [open, order]);
@@ -96,53 +93,31 @@ export default function EditOrderDialog({ open, onOpenChange, onUpdated, order }
     if (selectedProducts.length === 0) return toast.error("Select at least one product");
     if (advanceReceived && Number(advanceAmount) > Number(orderValue)) return toast.error("Advance cannot exceed Order Value");
 
-    if (quoteNo.trim()) {
-      const { data: existing } = await supabase
-        .from("orders").select("id").eq("quote_no", quoteNo.trim()).neq("id", order.id).maybeSingle();
-      if (existing) return toast.error("Quotation Number already exists");
-    }
-
     setSubmitting(true);
-    const payload: Record<string, any> = {
-      order_type: orderType,
-      order_name: orderName.trim(),
-      dealer_name: orderOwner,
-      quote_no: quoteNo.trim() || null,
-      colour_shade: colourShade || null,
-      salesperson: salesperson || null,
-      product_type: selectedProducts.join(", "),
-      total_windows: Number(qty) || 0,
-      sqft: Number(sqft) || 0,
-      order_value: Number(orderValue) || 0,
-      advance_received: advanceReceived ? Number(advanceAmount) || 0 : 0,
-      commercial_status: commercialStatus || "Pipeline",
-    };
+    try {
+      const payload: Record<string, any> = {
+        order_type: orderType,
+        order_name: orderName.trim(),
+        dealer_name: orderOwner,
+        quote_no: quoteNo.trim() || null,
+        colour_shade: colourShade || null,
+        salesperson: salesperson || null,
+        product_type: selectedProducts.join(", "),
+        total_windows: Number(qty) || 0,
+        sqft: Number(sqft) || 0,
+        order_value: Number(orderValue) || 0,
+        advance_received: advanceReceived ? Number(advanceAmount) || 0 : 0,
+        commercial_status: commercialStatus || "Pipeline",
+      };
 
-    // Log changes
-    const changedFields = Object.entries(payload).filter(([key, val]) => {
-      const oldVal = order[key];
-      return String(val ?? "") !== String(oldVal ?? "");
-    });
-
-    const { error } = await supabase.from("orders").update(payload).eq("id", order.id);
-    setSubmitting(false);
-
-    if (error) {
-      toast.error(error.message);
-    } else {
-      // Log activity for changed fields
-      for (const [key, val] of changedFields) {
-        await logActivity({
-          orderId: order.id,
-          module: "sales",
-          fieldName: key,
-          oldValue: order[key] != null ? String(order[key]) : null,
-          newValue: val != null ? String(val) : null,
-        });
-      }
+      await api.orders.update(order.id, payload);
       toast.success("Order updated");
       onOpenChange(false);
       onUpdated();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update order");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -150,38 +125,13 @@ export default function EditOrderDialog({ open, onOpenChange, onUpdated, order }
     if (!window.confirm("Are you exactly sure you want to delete this order? This action cannot be undone.")) return;
 
     setDeleting(true);
-
     try {
-      const { data, error } = await supabase.functions.invoke('delete-order', {
-        body: { orderId: order.id }
-      });
-
-      if (error) {
-        // Handle explicit function execution error
-        let errorMessage = error.message;
-        
-        // If the function returned a JSON error, handle it
-        if (typeof error === 'object' && (error as any).context?.json?.error) {
-          errorMessage = (error as any).context.json.error;
-        }
-
-        toast.error(errorMessage || "Failed to delete order");
-        setDeleting(false);
-        return;
-      }
-
-      if (data?.error) {
-        toast.error(data.error);
-        setDeleting(false);
-        return;
-      }
-
+      await api.orders.delete(order.id);
       toast.success("Order deleted successfully");
       onOpenChange(false);
       onUpdated();
     } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || "An unexpected error occurred during deletion.");
+      toast.error(err.message || "Failed to delete order");
     } finally {
       setDeleting(false);
     }

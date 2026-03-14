@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { useState } from "react";
+import { api } from "@/services/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/table";
 import { Plus, Check, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { logActivity } from "@/lib/activityLog";
 import { format } from "date-fns";
 
 interface Payment {
@@ -35,7 +34,6 @@ interface Payment {
 
 const APPROVAL_OPTIONS = ["Pending", "Approved", "Hold"];
 
-import StatusDropdown from "./StatusDropdown";
 import OrderActivityLog from "./OrderActivityLog";
 
 export default function FinanceSection({ orderId, order, onRefresh, updateOrder, readOnly }: {
@@ -45,7 +43,6 @@ export default function FinanceSection({ orderId, order, onRefresh, updateOrder,
   updateOrder: (field: string, value: any) => void;
   readOnly?: boolean;
 }) {
-  const [payments, setPayments] = useState<Payment[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   const [editPayment, setEditPayment] = useState<Payment | null>(null);
   const [amount, setAmount] = useState("");
@@ -53,41 +50,7 @@ export default function FinanceSection({ orderId, order, onRefresh, updateOrder,
   const [paymentMode, setPaymentMode] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const fetchPayments = async () => {
-    const { data } = await (supabase.from("payment_logs" as any) as any)
-      .select("*")
-      .eq("order_id", orderId)
-      .order("created_at", { ascending: false });
-    const paymentList = (data || []) as Payment[];
-
-    // Auto-create Draft payment for Sales advance if none exists
-    if (order.advance_received > 0) {
-      const hasSalesPayment = paymentList.some(p => p.source_module === "Sales");
-      if (!hasSalesPayment) {
-        const { data: { user } } = await supabase.auth.getUser();
-        await (supabase.from("payment_logs" as any) as any).insert({
-          order_id: orderId,
-          amount: Number(order.advance_received),
-          payment_date: order.created_at ? new Date(order.created_at).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
-          payment_mode: null,
-          entered_by: user?.id || null,
-          source_module: "Sales",
-          status: "Draft",
-        });
-        // Re-fetch after creating
-        const { data: refreshed } = await (supabase.from("payment_logs" as any) as any)
-          .select("*")
-          .eq("order_id", orderId)
-          .order("created_at", { ascending: false });
-        setPayments((refreshed || []) as Payment[]);
-        return;
-      }
-    }
-    setPayments(paymentList);
-  };
-
-  useEffect(() => { fetchPayments(); }, [orderId]);
-
+  const payments = (order.payment_logs || []) as Payment[];
   const confirmedPayments = payments.filter(p => p.status === "Confirmed");
   const totalReceipt = confirmedPayments.reduce((s, p) => s + Number(p.amount), 0);
   const balance = Number(order.order_value) - totalReceipt;
@@ -104,31 +67,25 @@ export default function FinanceSection({ orderId, order, onRefresh, updateOrder,
       return;
     }
     setSubmitting(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    await (supabase.from("payment_logs" as any) as any).insert({
-      order_id: orderId,
-      amount: Number(amount),
-      payment_date: paymentDate || null,
-      payment_mode: paymentMode || null,
-      entered_by: user?.id || null,
-      source_module: "Finance",
-      status: "Confirmed",
-      confirmed_by: user?.id || null,
-      confirmed_at: new Date().toISOString(),
-    });
-    await logActivity({
-      orderId,
-      module: "Finance",
-      fieldName: "payment",
-      oldValue: null,
-      newValue: `₹${Number(amount).toLocaleString()} via ${paymentMode || "N/A"} (Confirmed)`,
-    });
-    toast.success("Payment recorded");
-    resetForm();
-    setAddOpen(false);
-    setSubmitting(false);
-    fetchPayments();
-    onRefresh();
+    try {
+      await api.orders.addLog("payment_logs", {
+        order_id: orderId,
+        amount: Number(amount),
+        payment_date: paymentDate || null,
+        payment_mode: paymentMode || null,
+        source_module: "Finance",
+        status: "Confirmed",
+        confirmed_at: new Date().toISOString(),
+      });
+      toast.success("Payment recorded");
+      resetForm();
+      setAddOpen(false);
+      onRefresh();
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleEditPayment = async () => {
@@ -137,67 +94,47 @@ export default function FinanceSection({ orderId, order, onRefresh, updateOrder,
       return;
     }
     setSubmitting(true);
-    await (supabase.from("payment_logs" as any) as any)
-      .update({
+    try {
+      await api.orders.updateLog("payment_logs", editPayment.id, {
         amount: Number(amount),
         payment_date: paymentDate || null,
         payment_mode: paymentMode || null,
-      })
-      .eq("id", editPayment.id);
-    await logActivity({
-      orderId,
-      module: "Finance",
-      fieldName: "payment_edit",
-      oldValue: `₹${Number(editPayment.amount).toLocaleString()}`,
-      newValue: `₹${Number(amount).toLocaleString()} via ${paymentMode || "N/A"}`,
-    });
-    toast.success("Payment updated");
-    resetForm();
-    setEditPayment(null);
-    setSubmitting(false);
-    fetchPayments();
-    onRefresh();
+      });
+      toast.success("Payment updated");
+      resetForm();
+      setEditPayment(null);
+      onRefresh();
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const confirmPayment = async (p: Payment) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    await (supabase.from("payment_logs" as any) as any)
-      .update({
+    try {
+      await api.orders.updateLog("payment_logs", p.id, {
         status: "Confirmed",
-        confirmed_by: user?.id || null,
         confirmed_at: new Date().toISOString(),
-      })
-      .eq("id", p.id);
-    await logActivity({
-      orderId,
-      module: "Finance",
-      fieldName: "payment_status",
-      oldValue: "Draft",
-      newValue: `Confirmed ₹${Number(p.amount).toLocaleString()}`,
-    });
-    toast.success("Payment confirmed");
-    fetchPayments();
-    onRefresh();
+      });
+      toast.success("Payment confirmed");
+      onRefresh();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
   };
 
   const deleteDraftPayment = async (p: Payment) => {
-    // If it's a Sales draft representing the advance_received, we must also zero out the advance_received
-    // on the order itself, otherwise fetchPayments will instantly recreate it.
-    if (p.source_module === "Sales") {
-      await supabase.from("orders").update({ advance_received: 0 } as any).eq("id", orderId);
+    try {
+      if (p.source_module === "Sales") {
+        await api.orders.updateField(orderId, "advance_received", 0, "Finance");
+      }
+      await api.orders.deleteLog("payment_logs", p.id);
+      toast.success("Draft payment deleted");
+      onRefresh();
+    } catch (error: any) {
+      toast.error(error.message);
     }
-
-    await (supabase.from("payment_logs" as any) as any).delete().eq("id", p.id);
-    await logActivity({
-      orderId,
-      module: "Finance",
-      fieldName: "payment_delete",
-      oldValue: `₹${Number(p.amount).toLocaleString()} (Draft)`,
-      newValue: null,
-    });
-    toast.success("Draft payment deleted");
-    fetchPayments();
-    onRefresh();
   };
 
   const openEditDialog = (p: Payment) => {
@@ -208,35 +145,25 @@ export default function FinanceSection({ orderId, order, onRefresh, updateOrder,
   };
 
   const updateApproval = async (field: string, value: string) => {
-    const oldVal = order[field];
-    if (oldVal === value) return;
     if (readOnly) return;
-    await supabase.from("orders").update({ [field]: value }).eq("id", orderId);
-    await logActivity({
-      orderId,
-      module: "Finance",
-      fieldName: field,
-      oldValue: oldVal,
-      newValue: value,
-    });
-    toast.success("Updated");
-    onRefresh();
+    try {
+      await api.orders.updateField(orderId, field, value, "Finance");
+      toast.success("Updated");
+      onRefresh();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
   };
 
   const updateRemarks = async (value: string) => {
-    const oldVal = order.finance_remarks;
-    if (oldVal === value) return;
     if (readOnly) return;
-    await supabase.from("orders").update({ finance_remarks: value } as any).eq("id", orderId);
-    await logActivity({
-      orderId,
-      module: "Finance",
-      fieldName: "finance_remarks",
-      oldValue: oldVal,
-      newValue: value,
-    });
-    toast.success("Remarks updated");
-    onRefresh();
+    try {
+      await api.orders.updateField(orderId, "finance_remarks", value, "Finance");
+      toast.success("Remarks updated");
+      onRefresh();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
   };
 
   return (

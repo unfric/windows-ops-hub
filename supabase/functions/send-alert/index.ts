@@ -1,5 +1,6 @@
 import { corsHeaders } from "../_shared/cors.ts";
-import { getSupabaseAdmin, createErrorResponse } from "../_shared/auth.ts";
+import { errorResponse } from "../_shared/response.ts";
+import { getSupabaseAdmin } from "../_shared/auth.ts";
 
 interface AlertPayload {
   order_id: string;
@@ -110,6 +111,6 @@ Deno.serve(async (req) => {
     });
   } catch (error: any) {
     console.error("Error in send-alert:", error);
-    return createErrorResponse(error.message, 500);
+    return errorResponse(error.message, 500);
   }
 });
