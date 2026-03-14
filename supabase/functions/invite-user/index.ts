@@ -1,10 +1,5 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { verifyAdminOrManagement, createErrorResponse } from "../_shared/auth.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -12,53 +7,19 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const authResult = await verifyAdminOrManagement(req);
+    if ("error" in authResult) {
+      return createErrorResponse(authResult.error, authResult.status);
     }
-
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-    const callerClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: { user: caller } } = await callerClient.auth.getUser();
-    if (!caller) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const adminClient = createClient(supabaseUrl, serviceRoleKey);
-    const { data: adminCheck } = await adminClient
-      .from("user_roles")
-      .select("id")
-      .eq("user_id", caller.id)
-      .eq("role", "admin")
-      .maybeSingle();
-
-    if (!adminCheck) {
-      return new Response(JSON.stringify({ error: "Admin access required" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const { adminClient } = authResult;
 
     const { email, name, roles, action } = await req.json();
 
     // Handle resend invite
     if (action === "resend_invite") {
-      if (!email) {
-        return new Response(JSON.stringify({ error: "Email is required" }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+      if (!email) return createErrorResponse("Email is required", 400);
+
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
       await adminClient.auth.admin.generateLink({
         type: "recovery",
         email,
@@ -72,12 +33,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (!email) {
-      return new Response(JSON.stringify({ error: "Email is required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (!email) return createErrorResponse("Email is required", 400);
 
     // Check if user already exists
     const { data: existingUsers } = await adminClient.auth.admin.listUsers();
@@ -91,27 +47,18 @@ Deno.serve(async (req) => {
     if (existingUser) {
       userId = existingUser.id;
       if (name) {
-        await adminClient
-          .from("profiles")
-          .update({ name })
-          .eq("user_id", userId);
+        await adminClient.from("profiles").update({ name }).eq("user_id", userId);
       }
     } else {
       const tempPassword = crypto.randomUUID() + "Aa1!";
-      const { data: newUser, error: createError } =
-        await adminClient.auth.admin.createUser({
-          email,
-          password: tempPassword,
-          email_confirm: true,
-          user_metadata: { name: name || "" },
-        });
+      const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
+        email,
+        password: tempPassword,
+        email_confirm: true,
+        user_metadata: { name: name || "" },
+      });
 
-      if (createError) {
-        return new Response(JSON.stringify({ error: createError.message }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+      if (createError) return createErrorResponse(createError.message, 400);
 
       userId = newUser.user.id;
       isNewUser = true;
@@ -150,6 +97,7 @@ Deno.serve(async (req) => {
 
     // Send password reset email for new users
     if (isNewUser) {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
       await adminClient.auth.admin.generateLink({
         type: "recovery",
         email,
@@ -168,15 +116,9 @@ Deno.serve(async (req) => {
           ? "User invited. They will receive a password reset email."
           : "User roles updated.",
       }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-  } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  } catch (err: any) {
+    return createErrorResponse(err.message, 500);
   }
 });

@@ -1,10 +1,5 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { getSupabaseAdmin, createErrorResponse } from "../_shared/auth.ts";
 
 interface AlertPayload {
   order_id: string;
@@ -46,7 +41,7 @@ const ALERT_RULES: Record<string, { role: string; subject: string; bodyFn: (p: A
   ],
 };
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -63,15 +58,12 @@ serve(async (req) => {
       });
     }
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, serviceRoleKey);
-
+    const adminClient = getSupabaseAdmin();
     const results: string[] = [];
 
     for (const rule of rules) {
       // Get users with this role
-      const { data: roleUsers } = await supabase
+      const { data: roleUsers } = await adminClient
         .from("user_roles")
         .select("user_id")
         .eq("role", rule.role);
@@ -83,7 +75,7 @@ serve(async (req) => {
 
       // Get emails from profiles
       const userIds = roleUsers.map((r: any) => r.user_id);
-      const { data: profiles } = await supabase
+      const { data: profiles } = await adminClient
         .from("profiles")
         .select("email, name")
         .in("user_id", userIds);
@@ -96,7 +88,6 @@ serve(async (req) => {
       const emailBody = rule.bodyFn(payload);
 
       // Log the alert (in production, integrate with an email service)
-      // For now, we create in-app notifications and log the intent
       const notifications = userIds.map((uid: string) => ({
         user_id: uid,
         title: `📧 ${rule.subject}`,
@@ -106,7 +97,7 @@ serve(async (req) => {
         entity_id: payload.order_id,
       }));
 
-      await supabase.from("notifications").insert(notifications);
+      await adminClient.from("notifications").insert(notifications);
 
       results.push(
         `Alert sent to ${profiles.length} ${rule.role} user(s): ${profiles.map((p: any) => p.email).join(", ")}`
@@ -119,9 +110,6 @@ serve(async (req) => {
     });
   } catch (error: any) {
     console.error("Error in send-alert:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return createErrorResponse(error.message, 500);
   }
 });

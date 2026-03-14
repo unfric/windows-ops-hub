@@ -149,60 +149,29 @@ export default function EditOrderDialog({ open, onOpenChange, onUpdated, order }
   const handleDelete = async () => {
     if (!window.confirm("Are you exactly sure you want to delete this order? This action cannot be undone.")) return;
 
-    // Deletion constraint logic: Only delete if no downstream modules have progressed
-    if ((order.survey_done_windows || 0) > 0) return toast.error("Cannot delete: Order has progressed to Survey module. Survey must be reverted back to 0 first.");
-    if ((order.design_released_windows || 0) > 0) return toast.error("Cannot delete: Order has progressed to Design module. Design must be reverted back to 0 first.");
-
-    // Check for Production logs specifically (if foreign-key constraint doesn't cascade, we should warn manually)
-    const { count: prodCount } = await supabase.from("production_logs").select("*", { count: 'exact', head: true }).eq("order_id", order.id);
-    if ((prodCount || 0) > 0) return toast.error("Cannot delete: Order has production logs. Production logs must be deleted first.");
-
-    const { count: paymentCount } = await supabase.from("payment_logs").select("*", { count: 'exact', head: true }).eq("order_id", order.id);
-    if ((paymentCount || 0) > 0) return toast.error("Cannot delete: Order has payment logs. Finance must delete logs first.");
-
     setDeleting(true);
 
     try {
-      // Explicitly delete ALL child records — manual cascade
-      const tables = [
-        "order_activity_log",
-        "dispatch",
-        "dispatch_logs",
-        "installation",
-        "installation_logs",
-        "material_status",
-        "production_status",
-        "payment_logs",
-        "production_logs",
-        "rework_logs",
-      ] as const;
+      const { data, error } = await supabase.functions.invoke('delete-order', {
+        body: { orderId: order.id }
+      });
 
-      for (const table of tables) {
-        const { error: childErr } = await (supabase.from(table as any) as any).delete().eq("order_id", order.id);
-        if (childErr && childErr.code !== "PGRST204") {
-          console.warn(`Failed to delete from ${table}:`, childErr.message);
+      if (error) {
+        // Handle explicit function execution error
+        let errorMessage = error.message;
+        
+        // If the function returned a JSON error, handle it
+        if (typeof error === 'object' && (error as any).context?.json?.error) {
+          errorMessage = (error as any).context.json.error;
         }
-      }
 
-      // Also cleanup polymorphic audit logs
-      const { error: auditErr } = await supabase.from("audit_log").delete().eq("entity_id", order.id).eq("entity_type", "orders");
-      if (auditErr) console.warn("Failed to cleanup audit_log:", auditErr.message);
-
-      // Now attempt main order deletion
-      const { error: deleteErr, count } = await (supabase.from("orders") as any).delete({ count: "exact" }).eq("id", order.id);
-
-      console.log("Order delete result — error:", deleteErr, "count:", count);
-
-      if (deleteErr) {
-        toast.error(`Delete failed: ${deleteErr.message}`);
+        toast.error(errorMessage || "Failed to delete order");
         setDeleting(false);
         return;
       }
 
-      if (!count || count === 0) {
-        // Fallback: If exact count check failed but error is null, it might be an RLS issue or just count reporting quirk.
-        // We will try one more time without count check or just warn more clearly.
-        toast.error("Database rejected the deletion (0 rows affected). Please contact admin to check your Delete permissions (RLS) for the 'orders' table.");
+      if (data?.error) {
+        toast.error(data.error);
         setDeleting(false);
         return;
       }
