@@ -36,6 +36,7 @@ function ProtectedRoutes() {
   // Check if we are in a password set flow (from invite or recovery)
   const isPasswordFlow = 
     event === "PASSWORD_RECOVERY" || 
+    (event === "SIGNED_IN" && (window.location.hash.includes("type=recovery") || window.location.hash.includes("type=invite"))) ||
     window.location.hash.includes("type=recovery") || 
     window.location.hash.includes("type=invite");
 
@@ -46,7 +47,8 @@ function ProtectedRoutes() {
       </div>
     );
 
-  if (isPasswordFlow && user) {
+  // BLOC SECURITY: Forced password setup for invites/recovery
+  if (isPasswordFlow) {
     return (
       <Suspense fallback={<div className="flex h-screen items-center justify-center text-muted-foreground">Loading...</div>}>
         <SetPasswordPage />
