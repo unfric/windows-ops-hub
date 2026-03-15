@@ -170,6 +170,15 @@ export const api = {
       });
       if (error) throw error;
       return data;
+    },
+
+    /**
+     * Sets the password for the current user.
+     */
+    updatePassword: async (password: string) => {
+      const { data, error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+      return data;
     }
   },
 
