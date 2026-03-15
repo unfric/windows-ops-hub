@@ -134,11 +134,8 @@ export default function UserManagementPage() {
 
   const handleResendInvite = async (profile: Profile) => {
     try {
-      // Re-invigorate the invite via users-api:update with no role changes
-      await api.users.update(profile.user_id, {
-        profile: { status: "invited" } // This could trigger resend in modern users-api logic
-      });
-      toast.success("Invite resend triggered");
+      await api.users.resendInvite(profile.user_id);
+      toast.success("Invitation resent successfully");
     } catch (err: any) {
       toast.error(err.message || "Failed to resend invite");
     }

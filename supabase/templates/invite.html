@@ -1,49 +1,108 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <meta charset="utf-8">
   <title>Pulse Operations Hub Invitation</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; }
-    .container { max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 8px; }
-    .header { text-align: center; margin-bottom: 30px; }
-    .app-name { font-size: 24px; font-weight: bold; color: #2563eb; }
-    .content { margin-bottom: 30px; }
-    .button-container { text-align: center; }
-    .button { background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block; }
-    .footer { font-size: 12px; color: #777; margin-top: 40px; text-align: center; }
-    .details { background: #f9fafb; padding: 15px; border-radius: 6px; margin: 20px 0; border: 1px solid #e5e7eb; }
-    .details-row { margin-bottom: 5px; }
-    .label { font-weight: bold; color: #4b5563; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      border: 1px solid #eee;
+      border-radius: 8px;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .app-name {
+      font-size: 24px;
+      font-weight: bold;
+      color: #2563eb;
+    }
+
+    .content {
+      margin-bottom: 30px;
+    }
+
+    .button-container {
+      text-align: center;
+    }
+
+    .button {
+      background-color: #2563eb;
+      color: white;
+      padding: 12px 24px;
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: bold;
+      display: inline-block;
+    }
+
+    .footer {
+      font-size: 12px;
+      color: #777;
+      margin-top: 40px;
+      text-align: center;
+    }
+
+    .details {
+      background: #f9fafb;
+      padding: 15px;
+      border-radius: 6px;
+      margin: 20px 0;
+      border: 1px solid #e5e7eb;
+    }
+
+    .details-row {
+      margin-bottom: 5px;
+    }
+
+    .label {
+      font-weight: bold;
+      color: #4b5563;
+    }
   </style>
 </head>
+
 <body>
   <div class="container">
     <div class="header">
       <div class="app-name">Pulse Operations Hub</div>
     </div>
-    
+
     <div class="content">
-      <p>Hello <strong>{{ .UserMetaData.name }}</strong>,</p>
-      
-      <p>You have been invited to join the <strong>Pulse Operations Hub</strong>. Your account has been prepared with the following details:</p>
-      
+      <p>Hello <strong>{{ .Data.name }}</strong>,</p>
+
+      <p>You have been invited to join the <strong>Pulse Operations Hub</strong>. Your account has been prepared with
+        the following details:</p>
+
       <div class="details">
         <div class="details-row"><span class="label">Email:</span> {{ .Email }}</div>
-        <div class="details-row"><span class="label">Assigned Roles:</span> {{ .UserMetaData.roles }}</div>
+        <div class="details-row"><span class="label">Assigned Roles:</span> {{ .Data.roles }}</div>
       </div>
-      
+
       <p>Click the button below to accept your invitation and set up your password:</p>
     </div>
-    
+
     <div class="button-container">
       <a href="{{ .ConfirmationURL }}" class="button">Accept Invitation</a>
     </div>
-    
+
     <div class="footer">
       <p>You're receiving this email because an administrator at Pulse Operations Hub invited you.</p>
       <p>Powered by Supabase & Pulse Ops</p>
     </div>
   </div>
 </body>
+
 </html>

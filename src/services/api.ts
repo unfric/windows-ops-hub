@@ -173,6 +173,17 @@ export const api = {
     },
 
     /**
+     * Resends an invitation to a user.
+     */
+    resendInvite: async (id: string) => {
+      const { data, error } = await supabase.functions.invoke('users-api', {
+        body: { action: 'resend-invite', id }
+      });
+      if (error) throw error;
+      return data;
+    },
+
+    /**
      * Sets the password for the current user.
      */
     updatePassword: async (password: string) => {
