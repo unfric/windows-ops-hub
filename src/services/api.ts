@@ -190,6 +190,20 @@ export const api = {
       const { data, error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
       return data;
+    },
+    
+    /**
+     * Gets the current session.
+     */
+    getSession: async () => {
+      return await supabase.auth.getSession();
+    },
+
+    /**
+     * Refreshes the session using a refresh token.
+     */
+    refreshSession: async (refreshToken: string) => {
+      return await supabase.auth.refreshSession({ refresh_token: refreshToken });
     }
   },
 

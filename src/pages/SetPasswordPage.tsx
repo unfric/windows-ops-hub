@@ -8,11 +8,46 @@ import { toast } from "sonner";
 import { Activity, ShieldCheck, Lock } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
+
 const SetPasswordPage = () => {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [sessionLoading, setSessionLoading] = useState(true);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const handleInvitationSession = async () => {
+      try {
+        const hash = window.location.hash.substring(1);
+        const params = new URLSearchParams(hash);
+        const refreshToken = params.get("refresh_token");
+        const accessToken = params.get("access_token");
+
+        if (refreshToken) {
+          console.log("Invitation token detected, refreshing session...");
+          const { error } = await api.users.refreshSession(refreshToken);
+          if (error) throw error;
+          toast.success("Identity verified. Terminal ready.");
+        } else if (!accessToken) {
+          // If no tokens in hash, check if we already have a session
+          const { data: { session } } = await api.users.getSession();
+          if (!session) {
+            console.log("No invitation session found, redirecting to login.");
+            navigate("/login");
+          }
+        }
+      } catch (error: any) {
+        console.error("Session refresh error:", error);
+        toast.error("Invitation session expired or invalid.");
+        navigate("/login");
+      } finally {
+        setSessionLoading(false);
+      }
+    };
+
+    handleInvitationSession();
+  }, [navigate]);
 
   const handleSetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,6 +71,14 @@ const SetPasswordPage = () => {
     }
     setLoading(false);
   };
+
+  if (sessionLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#050505] text-primary/40 font-mono tracking-widest animate-pulse">
+        INITIALIZING ENCRYPTION LAYER...
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-screen flex items-center justify-center p-6 overflow-hidden bg-[#050505] selection:bg-primary/30 selection:text-white">
