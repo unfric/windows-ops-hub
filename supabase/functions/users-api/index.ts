@@ -75,7 +75,9 @@ async function handleInvite(data: any, requestorId: string) {
   if (!isAdmin) return errorResponse("Unauthorized", 403);
 
   // 1. Invite the user via Supabase Auth
+  const redirectUrl = `${new URL(req.url).origin}/set-password`;
   const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(data.email, {
+    redirectTo: redirectUrl,
     data: {
       name: data.name || "",
       is_admin_invite: true,
@@ -199,7 +201,9 @@ async function handleResendInvite(userId: string, requestorId: string) {
   const rolesStr = userRoles?.map((r: any) => r.role).join(", ") || "user";
 
   // Trigger Supabase Invite
+  const redirectUrl = `${new URL(req.url).origin}/set-password`;
   const { error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(profile.email, {
+    redirectTo: redirectUrl,
     data: {
       name: profile.name || "",
       is_admin_invite: true,
