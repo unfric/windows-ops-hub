@@ -31,7 +31,13 @@ const SetPasswordPage = lazy(() => import("@/pages/SetPasswordPage"));
 const queryClient = new QueryClient();
 
 function ProtectedRoutes() {
-  const { user, loading } = useAuth();
+  const { event, user, loading } = useAuth();
+  
+  // Check if we are in a password set flow (from invite or recovery)
+  const isPasswordFlow = 
+    event === "PASSWORD_RECOVERY" || 
+    window.location.hash.includes("type=recovery") || 
+    window.location.hash.includes("type=invite");
 
   if (loading)
     return (
@@ -40,19 +46,18 @@ function ProtectedRoutes() {
       </div>
     );
 
-  if (!user) {
+  if (isPasswordFlow && user) {
     return (
       <Suspense fallback={<div className="flex h-screen items-center justify-center text-muted-foreground">Loading...</div>}>
-        <LoginPage />
+        <SetPasswordPage />
       </Suspense>
     );
   }
 
-  const { event } = useAuth();
-  if (event === "PASSWORD_RECOVERY") {
+  if (!user) {
     return (
       <Suspense fallback={<div className="flex h-screen items-center justify-center text-muted-foreground">Loading...</div>}>
-        <SetPasswordPage />
+        <LoginPage />
       </Suspense>
     );
   }

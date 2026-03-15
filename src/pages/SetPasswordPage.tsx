@@ -28,8 +28,9 @@ const SetPasswordPage = () => {
     setLoading(true);
     try {
       await api.users.updatePassword(password);
-      toast.success("Password set successfully! Redirecting...");
-      setTimeout(() => navigate("/", { replace: true }), 2000);
+      toast.success("Password set successfully! Activating terminal...");
+      // Hard redirect to clear all Supabase hashes/tokens from URL
+      setTimeout(() => window.location.href = window.location.origin, 2000);
     } catch (error: any) {
       toast.error(error.message);
     }
