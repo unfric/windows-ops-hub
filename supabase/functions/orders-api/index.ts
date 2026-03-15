@@ -37,6 +37,8 @@ Deno.serve(async (req) => {
         return await handleUpdateLog(supabase, payload.table, payload.id, payload.data, authResult.user);
       case "delete-log":
         return await handleDeleteLog(supabase, payload.table, payload.id, authResult.user);
+      case "delete":
+        return await handleDelete(supabase, payload.id);
       default:
         return errorResponse(`Action '${action}' not found`, 404);
     }
@@ -222,4 +224,63 @@ async function handleUpdate(supabase: any, id: string, data: any) {
 
   if (error) return errorResponse(error);
   return jsonResponse(result);
+}
+
+async function handleDelete(supabase: any, id: string) {
+  if (!id) return errorResponse("Order ID is required");
+
+  // 1. Fetch order and check for progress fields
+  const { data: order, error: fetchErr } = await supabase
+    .from("orders")
+    .select("order_name, survey_done_windows, design_released_windows")
+    .eq("id", id)
+    .single();
+
+  if (fetchErr) return errorResponse(fetchErr);
+
+  if ((order.survey_done_windows || 0) > 0) {
+    return errorResponse(`Cannot delete '${order.order_name}' because Survey progress has been recorded (${order.survey_done_windows} windows).`, 400);
+  }
+
+  if ((order.design_released_windows || 0) > 0) {
+    return errorResponse(`Cannot delete '${order.order_name}' because Design has already been released (${order.design_released_windows} windows).`, 400);
+  }
+
+  // 2. Check for related logs in other tables
+  const [payments, production, dispatch, installation] = await Promise.all([
+    supabase.from("payment_logs").select("id").eq("order_id", id).eq("status", "Confirmed").limit(1),
+    supabase.from("production_logs").select("id").eq("order_id", id).limit(1),
+    supabase.from("dispatch_logs").select("id").eq("order_id", id).limit(1),
+    supabase.from("installation_logs").select("id").eq("order_id", id).limit(1),
+  ]);
+
+  if (payments.data && payments.data.length > 0) {
+    return errorResponse("Cannot delete an order that has confirmed payments. Delete or reverse payments first.", 400);
+  }
+  if (production.data && production.data.length > 0) {
+    return errorResponse("Cannot delete an order that has production logs. Business has already started manufacturing.", 400);
+  }
+  if (dispatch.data && dispatch.data.length > 0) {
+    return errorResponse("Cannot delete an order that has been partially or fully dispatched.", 400);
+  }
+  if (installation.data && installation.data.length > 0) {
+    return errorResponse("Cannot delete an order that has installation logs recorded.", 400);
+  }
+
+  // If all checks pass, proceed with deletion
+  const { error } = await supabase
+    .from("orders")
+    .delete()
+    .eq("id", id);
+
+  if (error) return errorResponse(error);
+
+  // Polymorphic cleanup (Audit logs don't have FK Cascades)
+  await supabase
+    .from("audit_log")
+    .delete()
+    .eq("entity_id", id)
+    .eq("entity_type", "orders");
+
+  return jsonResponse({ success: true });
 }

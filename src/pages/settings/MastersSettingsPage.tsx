@@ -53,7 +53,16 @@ export default function MastersSettingsPage() {
           </AccordionContent>
         </AccordionItem>
 
-
+        <AccordionItem value="operations" className="border rounded-lg bg-card px-4">
+          <AccordionTrigger className="hover:no-underline flex items-center gap-2">
+            <Truck className="h-4 w-4 text-primary" />
+            <span className="font-semibold">Operations & Supply Chain</span>
+          </AccordionTrigger>
+          <AccordionContent className="pt-2 space-y-4">
+            <ConfigList table="production_units" title="Production Units" />
+            <ConfigList table="coating_vendors" title="Coating Vendors" />
+          </AccordionContent>
+        </AccordionItem>
       </Accordion>
     </div>
   );

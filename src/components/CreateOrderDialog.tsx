@@ -122,8 +122,8 @@ export default function CreateOrderDialog({ open, onOpenChange, onCreated }: Cre
 
       const result = await api.orders.create(payload);
       
-      if (result.order) {
-        toast.success("Order created");
+      if (result && result.id) {
+        toast.success("Order created successfully");
         resetForm();
         onOpenChange(false);
         onCreated();

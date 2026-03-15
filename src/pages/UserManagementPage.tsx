@@ -106,8 +106,9 @@ export default function UserManagementPage() {
           return;
         }
         // Using users-api for invitation as well
-        await api.users.update("new", { 
-          profile: { email: formEmail.trim(), name: formName.trim() },
+        await api.users.invite({ 
+          email: formEmail.trim(), 
+          name: formName.trim(),
           roles: formRoles
         });
         toast.success("Invitation sent");

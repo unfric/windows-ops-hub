@@ -39,16 +39,41 @@ async function handleList() {
   const adminClient = getSupabaseAdmin();
 
   // Fetch all config data in parallel
-  const [settingsRes, salespersonsRes, commercialRes] = await Promise.all([
+  const [
+    settingsRes,
+    salespersonsRes,
+    commercialRes,
+    dealersRes,
+    projectNamesRes,
+    projectClientNamesRes,
+    productTypesRes,
+    colourShadesRes,
+    unitsRes,
+    vendorsRes
+  ] = await Promise.all([
     adminClient.from("app_settings").select("*"),
     adminClient.from("salespersons").select("*").order("name"),
     adminClient.from("commercial_statuses").select("*").order("name"),
+    adminClient.from("dealers").select("*").order("name"),
+    adminClient.from("project_names").select("*").order("name"),
+    adminClient.from("project_client_names").select("*").order("name"),
+    adminClient.from("other_product_types").select("*").order("name"),
+    adminClient.from("colour_shades").select("*").order("name"),
+    adminClient.from("production_units").select("*").order("name"),
+    adminClient.from("coating_vendors").select("*").order("name"),
   ]);
 
   return jsonResponse({
-    settings: settingsRes.data || [],
+    app_settings: settingsRes.data || [],
     salespersons: salespersonsRes.data || [],
     commercial_statuses: commercialRes.data || [],
+    dealers: dealersRes.data || [],
+    project_names: projectNamesRes.data || [],
+    project_client_names: projectClientNamesRes.data || [],
+    other_product_types: productTypesRes.data || [],
+    colour_shades: colourShadesRes.data || [],
+    production_units: unitsRes.data || [],
+    coating_vendors: vendorsRes.data || [],
   });
 }
 

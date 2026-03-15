@@ -72,7 +72,10 @@ async function handleInvite(data: any, requestorId: string) {
 
   // 1. Invite the user via Supabase Auth
   const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(data.email, {
-    data: { name: data.name || "" },
+    data: { 
+      name: data.name || "",
+      is_admin_invite: true 
+    },
   });
   if (inviteError) return errorResponse(inviteError);
 
