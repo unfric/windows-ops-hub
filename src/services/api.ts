@@ -140,6 +140,17 @@ export const api = {
     },
 
     /**
+     * Invites a new user by email and assigns initial roles.
+     */
+    invite: async (data: { email: string; name?: string; roles?: string[] }) => {
+      const { data: result, error } = await supabase.functions.invoke('users-api', {
+        body: { action: 'invite', data }
+      });
+      if (error) throw error;
+      return result;
+    },
+
+    /**
      * Updates user profile and roles (Admin only).
      */
     update: async (id: string, updateData: { profile?: any; roles?: string[] }) => {

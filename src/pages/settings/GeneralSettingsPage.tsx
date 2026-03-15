@@ -57,7 +57,7 @@ function ConfigList({ table, title }: { table: string; title: string }) {
 
   const toggle = async (item: ConfigItem) => {
     try {
-      await api.settings.upsert(table, { id: item.id, active: !item.active });
+      await api.settings.upsert(table, { id: item.id, name: item.name, active: !item.active });
       fetchItems();
     } catch (err: any) {
       toast.error(err.message || "Failed to toggle item");
