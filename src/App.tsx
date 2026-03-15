@@ -26,6 +26,7 @@ const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 const GeneralSettingsPage = lazy(() => import("@/pages/settings/GeneralSettingsPage"));
 const MastersSettingsPage = lazy(() => import("@/pages/settings/MastersSettingsPage"));
 const UserManagementPage = lazy(() => import("@/pages/UserManagementPage"));
+const SetPasswordPage = lazy(() => import("@/pages/SetPasswordPage"));
 
 const queryClient = new QueryClient();
 
@@ -43,6 +44,15 @@ function ProtectedRoutes() {
     return (
       <Suspense fallback={<div className="flex h-screen items-center justify-center text-muted-foreground">Loading...</div>}>
         <LoginPage />
+      </Suspense>
+    );
+  }
+
+  const { event } = useAuth();
+  if (event === "PASSWORD_RECOVERY") {
+    return (
+      <Suspense fallback={<div className="flex h-screen items-center justify-center text-muted-foreground">Loading...</div>}>
+        <SetPasswordPage />
       </Suspense>
     );
   }
@@ -77,6 +87,8 @@ function ProtectedRoutes() {
             <Route path="masters" element={<MastersSettingsPage />} />
             <Route path="users" element={<UserManagementPage />} />
           </Route>
+
+          <Route path="/set-password" element={<SetPasswordPage />} />
 
           {/* fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
