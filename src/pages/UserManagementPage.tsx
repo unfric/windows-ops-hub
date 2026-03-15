@@ -13,7 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { UserPlus, Pencil, Send, Ban } from "lucide-react";
+import { UserPlus, Pencil, Send, Ban, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 
 const ALL_ROLES = [
@@ -156,6 +156,18 @@ export default function UserManagementPage() {
     }
   };
 
+  const handleDeleteUser = async (profile: Profile) => {
+    if (!window.confirm(`Are you absolutely sure you want to delete ${profile.email}? This will permanently remove their account from the system.`)) return;
+    
+    try {
+      await api.users.delete(profile.user_id);
+      toast.success("User deleted successfully");
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete user");
+    }
+  };
+
   const getStatusBadge = (profile: Profile) => {
     const status = profile.status || (profile.active ? "active" : "disabled");
     switch (status) {
@@ -246,11 +258,13 @@ export default function UserManagementPage() {
                         </Button>
                       )}
                       {p.status !== "disabled" && (
-                        <Button variant="outline" size="sm" className="text-destructive" onClick={() => handleDisableUser(p)}>
-                          <Ban className="h-3.5 w-3.5 mr-1" />
-                          Disable
+                        <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10" onClick={() => handleDisableUser(p)} title="Disable User">
+                          <Ban className="h-3.5 w-3.5" />
                         </Button>
                       )}
+                      <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10" onClick={() => handleDeleteUser(p)} title="Delete User">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>
