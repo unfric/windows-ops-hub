@@ -28,6 +28,8 @@ Deno.serve(async (req) => {
         return await handleList(user.id);
       case "invite":
         return await handleInvite(payload.data, user.id);
+      case "resend-invite":
+        return await handleResendInvite(payload.id, user.id);
       case "update":
         return await handleUpdate(payload.id, payload.data);
       case "delete":
@@ -74,7 +76,7 @@ async function handleInvite(data: any, requestorId: string) {
 
   // 1. Invite the user via Supabase Auth
   const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(data.email, {
-    data: { 
+    data: {
       name: data.name || "",
       is_admin_invite: true,
       roles: data.roles ? data.roles.join(", ") : "user"
@@ -134,7 +136,7 @@ async function handleUpdate(userId: string, data: any) {
   const { profile, roles } = data;
 
   // 1. Update Profile if provided
-  if (profile) {
+  if (profile && Object.keys(profile).length > 0) {
     const { error: pErr } = await adminClient
       .from("profiles")
       .update(profile)
@@ -175,7 +177,36 @@ async function handleDelete(targetUserId: string, requestorId: string) {
   // Deleting from Auth admin automatically cascades to public.profiles and user_roles 
   // due to the ON DELETE CASCADE foreign keys in the database.
   const { error } = await adminClient.auth.admin.deleteUser(targetUserId);
-  
+
   if (error) return errorResponse(error);
   return jsonResponse({ success: true, message: "User deleted successfully" });
+}
+
+async function handleResendInvite(userId: string, requestorId: string) {
+  if (!userId) return errorResponse("User ID is required");
+  const adminClient = getSupabaseAdmin();
+
+  // Security check: Only admin/management
+  const { data: roles } = await adminClient.from("user_roles").select("role").eq("user_id", requestorId);
+  const isAdmin = roles?.some((r: any) => r.role === "admin" || r.role === "management");
+  if (!isAdmin) return errorResponse("Unauthorized", 403);
+
+  // Get user details
+  const { data: profile, error: pErr } = await adminClient.from("profiles").select("email, name").eq("user_id", userId).single();
+  if (pErr || !profile) return errorResponse("User profile not found");
+
+  const { data: userRoles } = await adminClient.from("user_roles").select("role").eq("user_id", userId);
+  const rolesStr = userRoles?.map((r: any) => r.role).join(", ") || "user";
+
+  // Trigger Supabase Invite
+  const { error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(profile.email, {
+    data: {
+      name: profile.name || "",
+      is_admin_invite: true,
+      roles: rolesStr
+    },
+  });
+
+  if (inviteError) return errorResponse(inviteError);
+  return jsonResponse({ success: true, message: "Invitation resent" });
 }
