@@ -27,9 +27,9 @@ Deno.serve(async (req) => {
       case "list":
         return await handleList(user.id);
       case "invite":
-        return await handleInvite(payload.data, user.id);
+        return await handleInvite(req, payload.data, user.id);
       case "resend-invite":
-        return await handleResendInvite(payload.id, user.id);
+        return await handleResendInvite(req, payload.id, user.id);
       case "update":
         return await handleUpdate(payload.id, payload.data);
       case "delete":
@@ -64,7 +64,7 @@ async function handleGetProfile(supabase: any, userId: string) {
   return jsonResponse(data);
 }
 
-async function handleInvite(data: any, requestorId: string) {
+async function handleInvite(req: Request, data: any, requestorId: string) {
   if (!data?.email) return errorResponse("Email is required");
 
   const adminClient = getSupabaseAdmin();
@@ -184,7 +184,7 @@ async function handleDelete(targetUserId: string, requestorId: string) {
   return jsonResponse({ success: true, message: "User deleted successfully" });
 }
 
-async function handleResendInvite(userId: string, requestorId: string) {
+async function handleResendInvite(req: Request, userId: string, requestorId: string) {
   if (!userId) return errorResponse("User ID is required");
   const adminClient = getSupabaseAdmin();
 

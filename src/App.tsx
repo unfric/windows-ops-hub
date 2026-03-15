@@ -26,11 +26,18 @@ const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 const GeneralSettingsPage = lazy(() => import("@/pages/settings/GeneralSettingsPage"));
 const MastersSettingsPage = lazy(() => import("@/pages/settings/MastersSettingsPage"));
 const UserManagementPage = lazy(() => import("@/pages/UserManagementPage"));
+const SetPasswordPage = lazy(() => import("@/pages/SetPasswordPage"));
 
 const queryClient = new QueryClient();
 
 function ProtectedRoutes() {
-  const { user, loading } = useAuth();
+  const { user, loading, event } = useAuth();
+  
+  // Check if we are in a password set flow (from invite or recovery)
+  const isPasswordFlow = 
+    event === "PASSWORD_RECOVERY" || 
+    window.location.hash.includes("type=recovery") || 
+    window.location.hash.includes("type=invite");
 
   if (loading)
     return (
@@ -38,6 +45,15 @@ function ProtectedRoutes() {
         Loading...
       </div>
     );
+
+  // BLOC SECURITY: Forced password setup for invites/recovery
+  if (isPasswordFlow) {
+    return (
+      <Suspense fallback={<div className="flex h-screen items-center justify-center text-muted-foreground">Loading...</div>}>
+        <SetPasswordPage />
+      </Suspense>
+    );
+  }
 
   if (!user) {
     return (
