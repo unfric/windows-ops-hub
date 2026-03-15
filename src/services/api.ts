@@ -159,6 +159,17 @@ export const api = {
       });
       if (error) throw error;
       return data;
+    },
+
+    /**
+     * Deletes a user account (Admin only).
+     */
+    delete: async (id: string) => {
+      const { data, error } = await supabase.functions.invoke('users-api', {
+        body: { action: 'delete', id }
+      });
+      if (error) throw error;
+      return data;
     }
   },
 

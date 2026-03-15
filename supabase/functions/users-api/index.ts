@@ -30,6 +30,8 @@ Deno.serve(async (req) => {
         return await handleInvite(payload.data, user.id);
       case "update":
         return await handleUpdate(payload.id, payload.data);
+      case "delete":
+        return await handleDelete(payload.id, user.id);
       default:
         return errorResponse(`Action '${action}' not found`, 404);
     }
@@ -74,7 +76,8 @@ async function handleInvite(data: any, requestorId: string) {
   const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(data.email, {
     data: { 
       name: data.name || "",
-      is_admin_invite: true 
+      is_admin_invite: true,
+      roles: data.roles ? data.roles.join(", ") : "user"
     },
   });
   if (inviteError) return errorResponse(inviteError);
@@ -156,4 +159,23 @@ async function handleUpdate(userId: string, data: any) {
   }
 
   return jsonResponse({ success: true });
+}
+
+async function handleDelete(targetUserId: string, requestorId: string) {
+  if (!targetUserId) return errorResponse("User ID is required");
+  if (targetUserId === requestorId) return errorResponse("You cannot delete your own account");
+
+  const adminClient = getSupabaseAdmin();
+
+  // Verify requestor is admin
+  const { data: roles } = await adminClient.from("user_roles").select("role").eq("user_id", requestorId);
+  const isAdmin = roles?.some((r: any) => r.role === "admin");
+  if (!isAdmin) return errorResponse("Only Admins can delete users", 403);
+
+  // Deleting from Auth admin automatically cascades to public.profiles and user_roles 
+  // due to the ON DELETE CASCADE foreign keys in the database.
+  const { error } = await adminClient.auth.admin.deleteUser(targetUserId);
+  
+  if (error) return errorResponse(error);
+  return jsonResponse({ success: true, message: "User deleted successfully" });
 }
