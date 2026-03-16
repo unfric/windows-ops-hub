@@ -1,9 +1,9 @@
 
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { 
-  ClipboardCheck, HardHat, Truck, ShoppingCart, Layout, 
-  Activity, ArrowRight, AlertTriangle, Clock
+import {
+  ClipboardCheck, HardHat, Truck, ShoppingCart, Layout,
+  Activity, ArrowRight, AlertTriangle
 } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -13,8 +13,8 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAggregatedOrders } from "@/hooks/useAggregatedOrders";
 import { AggregatedOrder } from "@/lib/order-logic";
-import { 
-  KPICard, SectionHeader, StatusCell, MaterialsStatusDetail 
+import {
+  KPICard, SectionHeader, StatusCell, MaterialsStatusDetail, PageHeader, PageWrapper
 } from "@/components/shared/DashboardComponents";
 import { isWithinInterval, startOfDay, endOfDay, startOfWeek, startOfMonth, parseISO } from "date-fns";
 
@@ -26,14 +26,17 @@ export default function OperationalDashboard() {
 
   if (loading) {
     return (
-      <div className="flex flex-col h-[80vh] items-center justify-center gap-4">
-        <Clock className="h-10 w-10 text-primary animate-spin" />
-        <p className="text-muted-foreground animate-pulse font-medium">Aggregating Operational Excellence...</p>
+      <div className="flex flex-col h-[80vh] items-center justify-center gap-6">
+        <div className="relative">
+          <div className="h-20 w-20 rounded-full border-4 border-primary/10 border-t-primary animate-spin" />
+          <Activity className="h-8 w-8 text-primary absolute inset-0 m-auto animate-pulse" />
+        </div>
+        <p className="text-slate-400 font-black uppercase tracking-[0.3em] text-[10px] animate-pulse">Aggregating Operational Excellence...</p>
       </div>
     );
   }
 
-  // Time-based filtering logic
+  // ... (rest of filtering logic remains same)
   const now = new Date();
   let start: Date | null = null;
   const end = endOfDay(now);
@@ -52,17 +55,15 @@ export default function OperationalDashboard() {
     });
   };
 
-  const activityCount = filterLogs(rawLogs?.activity_logs || [], "timestamp").length;
-  const productionCount = filterLogs(rawLogs?.production_logs || [], "entry_date").reduce((acc, l) => acc + (l.windows_completed || 0), 0);
 
   // Metrics calculation (Global)
   const totalValue = aggregated.reduce((acc, o) => acc + Number(o.order_value), 0);
   const totalBalance = aggregated.reduce((acc, o) => acc + Number(o.balance), 0);
-  
+
   const pipelineValue = aggregated
     .filter(o => (o.commercial_status || "").toLowerCase().includes("pipeline"))
     .reduce((acc, o) => acc + Number(o.order_value), 0);
-    
+
   const approvedValue = aggregated
     .filter(o => (o.commercial_status || "").toLowerCase().includes("approved"))
     .reduce((acc, o) => acc + Number(o.order_value), 0);
@@ -81,28 +82,21 @@ export default function OperationalDashboard() {
   if (pendingProcurement.length > 5) alerts.push({ label: "Procurement Bottlenecks", count: pendingProcurement.length, type: "red" });
 
   return (
-    <div className="p-4 md:p-8 lg:p-12 max-w-[1600px] mx-auto space-y-12 pb-32">
-      {/* HEADER */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8">
-        <div className="flex items-center gap-5">
-          <div className="h-16 w-16 rounded-[22px] bg-primary flex items-center justify-center shadow-[0_12px_24px_rgba(var(--primary),0.2)]">
-            <Activity className="h-8 w-8 text-white animate-pulse" />
-          </div>
-          <div>
-            <h1 className="text-4xl font-black tracking-tight text-slate-900 uppercase italic leading-none">Command Central</h1>
-            <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-[10px] mt-2">Real-time Industrial Pulse</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-1.5 bg-slate-200/50 backdrop-blur-md p-1.5 rounded-2xl border border-white">
+    <PageWrapper title="Operational Dashboard" className="p-4 md:p-8 lg:p-12 max-w-[1600px] mx-auto space-y-12 pb-32">
+      <PageHeader
+        title="Command Central"
+        subtitle="Real-time Industrial Pulse"
+        icon={Activity}
+      >
+        <div className="flex items-center gap-1.5 bg-slate-100/80 backdrop-blur-md p-1.5 rounded-2xl border border-slate-200/50 shadow-inner">
           {(["daily", "weekly", "monthly", "all"] as TimeHorizon[]).map((t) => (
             <Button
               key={t}
               variant={horizon === t ? "default" : "ghost"}
               size="sm"
               className={cn(
-                "capitalize h-10 px-6 text-xs font-black tracking-widest transition-all rounded-xl",
-                horizon === t ? "bg-white text-primary shadow-sm hover:bg-white" : "text-slate-500 hover:bg-white/50"
+                "capitalize h-9 px-5 text-[10px] font-black tracking-widest transition-all rounded-xl",
+                horizon === t ? "bg-white text-primary shadow-sm hover:bg-white" : "text-slate-400 hover:bg-white/50"
               )}
               onClick={() => setHorizon(t)}
             >
@@ -110,7 +104,7 @@ export default function OperationalDashboard() {
             </Button>
           ))}
         </div>
-      </div>
+      </PageHeader>
 
       {/* ALERTS */}
       {alerts.length > 0 && (
@@ -171,7 +165,7 @@ export default function OperationalDashboard() {
         <ProductionModule orders={pendingProduction.slice(0, 10)} />
         <DispatchModule orders={pendingDispatch.slice(0, 10)} />
         <InstallationModule orders={pendingInstall.slice(0, 10)} />
-        
+
         <div className="bg-slate-50/50 rounded-3xl p-8 border border-slate-100 flex flex-col justify-center items-center text-center space-y-4">
           <div className="h-16 w-16 rounded-2xl bg-white shadow-sm flex items-center justify-center">
             <Activity className="h-8 w-8 text-primary/40" />
@@ -187,7 +181,7 @@ export default function OperationalDashboard() {
           </Button>
         </div>
       </div>
-    </div>
+    </PageWrapper>
   );
 }
 

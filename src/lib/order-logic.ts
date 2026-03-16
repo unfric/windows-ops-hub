@@ -45,7 +45,11 @@ export interface Order {
   approval_for_dispatch: string;
   created_at: string;
   updated_at?: string;
-  finance_remarks?: string;
+  finance_remarks: string | null;
+  survey_remarks: string | null;
+  design_remarks: string | null;
+  procurement_remarks: string | null;
+  store_remarks: string | null;
 }
 
 export interface AggregatedOrder extends Order {

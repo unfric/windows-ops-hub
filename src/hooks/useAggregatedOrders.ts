@@ -43,6 +43,11 @@ export function useAggregatedOrders() {
     error,
     refresh: fetchData,
     rawLogs,
-    stagesMap
+    stagesMap,
+    payment_logs: rawLogs?.payment_logs || [],
+    production_logs: rawLogs?.production_logs || [],
+    dispatch_logs: rawLogs?.dispatch_logs || [],
+    installation_logs: rawLogs?.installation_logs || [],
+    rework_logs: rawLogs?.rework_logs || []
   };
 }

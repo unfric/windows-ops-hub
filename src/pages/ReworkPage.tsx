@@ -1,40 +1,24 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { api } from "@/services/api";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { toast } from "sonner";
-import { Download } from "lucide-react";
+import { Download, AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { exportDataToExcel } from "@/lib/excelUtils";
+import { useAggregatedOrders } from "@/hooks/useAggregatedOrders";
+import { PageHeader, PageWrapper, StatusDot } from "@/components/shared/DashboardComponents";
+import { cn } from "@/lib/utils";
 
 export default function ReworkPage() {
-  const [orders, setOrders] = useState<any[]>([]);
-  const [reworkMap, setReworkMap] = useState<Record<string, any[]>>({});
-  const [loading, setLoading] = useState(true);
+  const { orders, rework_logs, loading } = useAggregatedOrders();
+  const [activeTab, setActiveTab] = useState("pending");
 
-  useEffect(() => {
-    const fetch = async () => {
-      try {
-        const data = await api.orders.list();
-        if (!data.orders) { setLoading(false); return; }
-        setOrders(data.orders || []);
-
-        const rm: Record<string, any[]> = {};
-        (data.rework_logs || []).forEach((l: any) => {
-          if (!rm[l.order_id]) rm[l.order_id] = [];
-          rm[l.order_id].push(l);
-        });
-        setReworkMap(rm);
-      } catch (err: any) {
-        toast.error("Failed to load rework data");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetch();
-  }, []);
+  const reworkMap: Record<string, any[]> = {};
+  (rework_logs || []).forEach((l: any) => {
+    if (!reworkMap[l.order_id]) reworkMap[l.order_id] = [];
+    reworkMap[l.order_id].push(l);
+  });
 
   const ordersWithRework = orders.filter((o) => (reworkMap[o.id] || []).length > 0);
   const pendingOrders = ordersWithRework.filter((o) => (reworkMap[o.id] || []).some((r: any) => r.status === "Pending"));
@@ -43,12 +27,13 @@ export default function ReworkPage() {
 
   const getLatestIssue = (id: string) => {
     const logs = reworkMap[id] || [];
-    if (logs.length === 0) return { issue: "—", resp: "—", date: "—" };
+    if (logs.length === 0) return { issue: "—", resp: "—", date: "—", qty: 0 };
     const latest = [...logs].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
     return {
-      issue: `${latest.rework_qty}× ${latest.issue_type || latest.rework_issue || "—"}`,
+      issue: latest.issue_type || latest.rework_issue || "—",
       resp: latest.responsible_person || "—",
-      date: new Date(latest.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+      date: new Date(latest.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
+      qty: latest.rework_qty || 0
     };
   };
 
@@ -62,7 +47,7 @@ export default function ReworkPage() {
     return "Solved";
   };
 
-  const handleExport = (activeTab: string) => {
+  const handleExport = () => {
     let list = ordersWithRework;
     if (activeTab === "pending") list = pendingOrders;
     else if (activeTab === "inprogress") list = inProgressOrders;
@@ -87,80 +72,116 @@ export default function ReworkPage() {
     exportDataToExcel(data, headers, `rework_export_${activeTab}.xlsx`);
   };
 
-  const statusColor = (s: string) => {
-    switch (s) {
-      case "Pending": return "bg-warning/15 text-warning border-warning/20";
-      case "In Progress": return "bg-blue-500/15 text-blue-600 border-blue-500/20";
-      case "Solved": return "bg-green-500/15 text-green-600 border-green-500/20";
-      default: return "";
-    }
-  };
-
   const renderTable = (list: any[]) => (
-    <div className="rounded-md border bg-card">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Order</TableHead>
-            <TableHead>Salesperson</TableHead>
-            <TableHead>Issue / Responsible</TableHead>
-            <TableHead>Reported</TableHead>
-            <TableHead>Status</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {loading ? (
-            <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
-          ) : list.length === 0 ? (
-            <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No orders</TableCell></TableRow>
-          ) : list.map((o) => (
-            <TableRow key={o.id}>
-              <TableCell>
-                <Link to={`/orders/${o.id}`} className="font-medium text-primary hover:underline">{o.order_name}</Link>
-                <div className="text-[10px] text-muted-foreground uppercase">{o.dealer_name}</div>
-                <div className="text-[10px] text-muted-foreground">Q: {o.quote_no || "—"} | S: {o.sales_order_no || "—"}</div>
-              </TableCell>
-              <TableCell className="text-sm">{o.salesperson || "—"}</TableCell>
-              <TableCell className="text-sm">
-                <div className="font-medium text-destructive">{getLatestIssue(o.id).issue}</div>
-                <div className="text-xs text-muted-foreground">Responsible: {getLatestIssue(o.id).resp}</div>
-              </TableCell>
-              <TableCell className="text-sm">{getLatestIssue(o.id).date}</TableCell>
-              <TableCell>
-                <Badge variant="outline" className={statusColor(getStatus(o.id))}>{getStatus(o.id)}</Badge>
-              </TableCell>
+    <div className="rounded-[32px] border border-slate-200 bg-white/60 backdrop-blur-md shadow-xl shadow-slate-200/40 overflow-hidden">
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader className="bg-slate-50/50">
+            <TableRow className="border-slate-100 hover:bg-transparent">
+              <TableHead className="py-5 px-6 font-black text-[10px] uppercase tracking-widest text-slate-400">Order Entity</TableHead>
+              <TableHead className="py-5 font-black text-[10px] uppercase tracking-widest text-slate-400">Rework Protocol</TableHead>
+              <TableHead className="py-5 font-black text-[10px] uppercase tracking-widest text-slate-400">Responsible</TableHead>
+              <TableHead className="py-5 font-black text-[10px] uppercase tracking-widest text-slate-400">Timestamp</TableHead>
+              <TableHead className="py-5 font-black text-[10px] uppercase tracking-widest text-slate-400 text-right px-6">Resolution</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-32">
+                   <div className="flex flex-col items-center gap-4">
+                      <Loader2 className="h-10 w-10 animate-spin text-primary/40" />
+                      <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-300">Auditing Rework Stream...</p>
+                   </div>
+                </TableCell>
+              </TableRow>
+            ) : list.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-32">
+                   <div className="flex flex-col items-center gap-4 opacity-50">
+                      <AlertTriangle className="h-12 w-12 text-slate-200" />
+                      <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Clear quality control logs</p>
+                   </div>
+                </TableCell>
+              </TableRow>
+            ) : (
+              list.map((o) => {
+                const latest = getLatestIssue(o.id);
+                const status = getStatus(o.id);
+                return (
+                  <TableRow key={o.id} className="group/row hover:bg-slate-50/80 transition-all border-slate-100 h-24">
+                    <TableCell className="px-6">
+                       <div className="flex flex-col gap-0.5">
+                          <Link to={`/orders/${o.id}`} className="font-bold text-slate-900 hover:text-primary transition-colors truncate text-[13px]">{o.order_name}</Link>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter line-clamp-1">{o.dealer_name}</span>
+                       </div>
+                    </TableCell>
+                    <TableCell>
+                       <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2">
+                             <Badge variant="outline" className="text-[9px] font-black uppercase py-0.5 px-2 border-red-100 bg-red-50 text-red-600">
+                                {latest.qty} UNITS
+                             </Badge>
+                             <span className="font-bold text-slate-900 text-[11px] truncate">{latest.issue}</span>
+                          </div>
+                       </div>
+                    </TableCell>
+                    <TableCell>
+                       <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 bg-slate-100/50 px-2 py-1 rounded-lg border border-slate-200/50">
+                          {latest.resp}
+                       </span>
+                    </TableCell>
+                    <TableCell>
+                       <span className="text-[10px] font-bold text-slate-400 block">{latest.date}</span>
+                    </TableCell>
+                    <TableCell className="px-6 text-right">
+                       <div className="flex items-center justify-end gap-2">
+                          <StatusDot status={status === "Solved" ? "green" : status === "In Progress" ? "blue" : "red"} />
+                          <span className={cn("text-[10px] font-black uppercase tracking-widest", 
+                            status === "Solved" ? "text-emerald-600" : 
+                            status === "In Progress" ? "text-blue-600" : "text-red-600"
+                          )}>
+                             {status}
+                          </span>
+                       </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Rework</h1>
-          <p className="text-sm text-muted-foreground">Track defects, complaints, and corrective work</p>
+    <PageWrapper title="Rework & Defect Tracking">
+      <PageHeader 
+        title="Quality Guard" 
+        subtitle={`${pendingOrders.length} OPEN DEVIATIONS REQUIRING ATTENTION`}
+        icon={AlertTriangle}
+      >
+        <Button variant="outline" size="sm" className="h-10 text-[10px] font-black uppercase tracking-[0.1em] rounded-xl border-slate-200" onClick={handleExport}>
+          <Download className="mr-2 h-4 w-4" /> Export Deviation Log
+        </Button>
+      </PageHeader>
+
+      <Tabs defaultValue="pending" value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <div className="flex items-center justify-between mb-6">
+           <TabsList className="bg-slate-100/50 p-1 h-11 rounded-2xl border border-slate-200/50">
+             <TabsTrigger value="pending" className="rounded-xl px-4 text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-sm">Awaiting ({pendingOrders.length})</TabsTrigger>
+             <TabsTrigger value="inprogress" className="rounded-xl px-4 text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-sm">In Correction ({inProgressOrders.length})</TabsTrigger>
+             <TabsTrigger value="solved" className="rounded-xl px-4 text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-sm">Rectified ({solvedOrders.length})</TabsTrigger>
+             <TabsTrigger value="all" className="rounded-xl px-4 text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-sm">Full History</TabsTrigger>
+           </TabsList>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => handleExport("all")}>
-            <Download className="mr-2 h-4 w-4" /> Export All
-          </Button>
-        </div>
-      </div>
-      <Tabs defaultValue="pending">
-        <TabsList>
-          <TabsTrigger value="pending">Pending Issues ({pendingOrders.length})</TabsTrigger>
-          <TabsTrigger value="inprogress">In Progress ({inProgressOrders.length})</TabsTrigger>
-          <TabsTrigger value="solved">Solved ({solvedOrders.length})</TabsTrigger>
-          <TabsTrigger value="all">All Issues ({ordersWithRework.length})</TabsTrigger>
-        </TabsList>
-        <TabsContent value="pending" className="mt-4">{renderTable(pendingOrders)}</TabsContent>
-        <TabsContent value="inprogress" className="mt-4">{renderTable(inProgressOrders)}</TabsContent>
-        <TabsContent value="solved" className="mt-4">{renderTable(solvedOrders)}</TabsContent>
-        <TabsContent value="all" className="mt-4">{renderTable(ordersWithRework)}</TabsContent>
+        
+        <TabsContent value="pending" className="mt-0 outline-none">{renderTable(pendingOrders)}</TabsContent>
+        <TabsContent value="inprogress" className="mt-0 outline-none">{renderTable(inProgressOrders)}</TabsContent>
+        <TabsContent value="solved" className="mt-0 outline-none">{renderTable(solvedOrders)}</TabsContent>
+        <TabsContent value="all" className="mt-0 outline-none">{renderTable(ordersWithRework)}</TabsContent>
       </Tabs>
-    </div>
+    </PageWrapper>
   );
 }

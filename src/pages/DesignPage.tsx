@@ -1,9 +1,8 @@
-import { useEffect, useState } from "react";
-import { api } from "@/services/api";
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -14,83 +13,33 @@ import {
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
-import { Search, Filter, X, Download } from "lucide-react";
-import { toast } from "sonner";
+import { Search, Filter, X, Download, Layout, Loader2 } from "lucide-react";
+import { useAggregatedOrders } from "@/hooks/useAggregatedOrders";
+import { useSettingsOptions } from "@/hooks/useSettingsOptions";
+import { PageHeader, PageWrapper, StatusDot } from "@/components/shared/DashboardComponents";
 import { exportDataToExcel } from "@/lib/excelUtils";
 
-interface Order {
-  id: string;
-  order_type: string;
-  order_name: string;
-  dealer_name: string;
-  quote_no: string | null;
-  sales_order_no: string | null;
-  colour_shade: string | null;
-  salesperson: string | null;
-  product_type: string;
-  total_windows: number;
-  sqft: number;
-  order_value: number;
-  survey_done_windows: number;
-  design_released_windows: number;
-  design_remarks: string | null;
-  approval_for_production: string;
-}
-
-interface Filters {
-  salesperson: string;
-  orderOwner: string;
-  approvalProduction: string;
-}
-
-const emptyFilters: Filters = { salesperson: "", orderOwner: "", approvalProduction: "" };
-
-const approvalColor = (status: string) => {
-  if (status === "Approved") return "bg-success/15 text-success border-success/20";
-  if (status === "Hold") return "bg-warning/15 text-warning border-warning/20";
-  return "bg-muted text-muted-foreground";
-};
-
 export default function DesignPage() {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { aggregated: orders, loading } = useAggregatedOrders();
+  const { settings } = useSettingsOptions();
+
   const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [tab, setTab] = useState("pending");
-  const [salespersons, setSalespersons] = useState<string[]>([]);
-  const [owners, setOwners] = useState<string[]>([]);
+  const [filters, setFilters] = useState({ salesperson: "", orderOwner: "", approvalProduction: "" });
 
-  const fetchData = async () => {
-    try {
-      const data = await api.orders.list();
-      setOrders((data.orders as unknown as Order[]) || []);
-    } catch (err: any) {
-      toast.error("Failed to load orders");
-    } finally {
-      setLoading(false);
-    }
+  const salespersons = settings?.salespersons?.map((s) => s.name) || [];
+  const owners = [...new Set(orders.map((o) => o.dealer_name).filter(Boolean))].sort();
+
+  const approvalColor = (status: string) => {
+    const s = (status || "").toLowerCase();
+    if (s === "approved") return "text-emerald-600 font-bold";
+    if (s === "hold") return "text-amber-600";
+    return "text-slate-400";
   };
-
-  const fetchFilterOptions = async () => {
-    try {
-      const settings = await api.settings.list();
-      if (settings) {
-        setSalespersons(settings.salespersons?.map((s: any) => s.name) || []);
-      }
-      setOwners([...new Set(orders.map((o) => o.dealer_name).filter(Boolean))].sort());
-    } catch (err) {
-      console.error("Error fetching filter options:", err);
-    }
-  };
-
-  useEffect(() => { fetchData(); }, []);
-  useEffect(() => { if (orders.length > 0) fetchFilterOptions(); }, [orders.length]);
 
   const tabFiltered = orders.filter((o) => {
-    const surveyDone = o.survey_done_windows || 0;
-    const released = o.design_released_windows || 0;
-    if (tab === "pending") return released < surveyDone;
-    if (tab === "released") return released >= surveyDone && surveyDone > 0;
+    if (tab === "pending") return o.designReleased < o.surveyDone;
+    if (tab === "released") return o.designReleased >= o.surveyDone && o.surveyDone > 0;
     return true;
   });
 
@@ -107,6 +56,7 @@ export default function DesignPage() {
     return true;
   });
 
+  const pendingCount = orders.filter(o => o.designReleased < o.surveyDone).length;
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
 
   const handleExport = () => {
@@ -115,143 +65,192 @@ export default function DesignPage() {
       "Order": o.order_name,
       "Owner": o.dealer_name,
       "Salesperson": o.salesperson || "",
-      "Survey Win": o.survey_done_windows,
-      "Design Win": o.design_released_windows,
-      "Remarks": o.design_remarks || "",
+      "Survey Win": o.surveyDone,
+      "Design Win": o.designReleased,
+      "Remarks": (o as any).design_remarks || "",
       "Prod Appr": o.approval_for_production
     }));
     exportDataToExcel(data, headers, `design_export_${tab}.xlsx`);
   };
 
   return (
-    <div className="p-6">
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Design</h1>
-          <p className="text-sm text-muted-foreground">{orders.length} total orders</p>
-        </div>
+    <PageWrapper title="Design & Engineering">
+      <PageHeader
+        title="Blueprint Forge"
+        subtitle={`${pendingCount} DEPLOYMENTS PENDING SPECIFICATION`}
+        icon={Layout}
+      >
+        <Button variant="outline" size="sm" className="h-10 text-[10px] font-black uppercase tracking-[0.1em] rounded-xl border-slate-200" onClick={handleExport}>
+          <Download className="mr-2 h-4 w-4" /> Export Registry
+        </Button>
+      </PageHeader>
+
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
+        <Tabs value={tab} onValueChange={setTab} className="w-full lg:w-auto">
+          <TabsList className="bg-slate-100/50 p-1 h-11 rounded-2xl border border-slate-200/50">
+            <TabsTrigger value="pending" className="rounded-xl px-4 text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-sm">Pending</TabsTrigger>
+            <TabsTrigger value="released" className="rounded-xl px-4 text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-sm">Released</TabsTrigger>
+            <TabsTrigger value="all" className="rounded-xl px-4 text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-sm">Global</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={handleExport}>
-            <Download className="h-4 w-4" /> Export
-          </Button>
+          <div className="relative flex-1 min-w-[300px]">
+            <Search className="absolute left-4 top-3 h-4 w-4 text-slate-300" />
+            <Input
+              placeholder="SCAN SCHEMATICS..."
+              className="pl-12 h-11 bg-white border-slate-200 rounded-2xl text-[11px] font-bold uppercase tracking-widest shadow-sm focus-visible:ring-primary/20"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="h-11 px-4 gap-2 rounded-2xl border-slate-200 bg-white shadow-sm text-[10px] font-black uppercase tracking-widest">
+                <Filter className="h-4 w-4 text-slate-400" />
+                Filters
+                {activeFilterCount > 0 && (
+                  <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-[10px] rounded-full bg-primary text-white border-none">
+                    {activeFilterCount}
+                  </Badge>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 p-5 rounded-3xl shadow-2xl border-none bg-white/95 backdrop-blur-xl" align="end">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-xs font-black uppercase tracking-[0.2em] text-slate-900">Filter Protocols</span>
+                {activeFilterCount > 0 && (
+                  <Button variant="ghost" size="sm" className="h-7 text-[10px] font-bold uppercase tracking-widest text-primary" onClick={() => setFilters({ salesperson: "", orderOwner: "", approvalProduction: "" })}>
+                    <X className="h-3 w-3 mr-1" /> Purge All
+                  </Button>
+                )}
+              </div>
+              <div className="space-y-4">
+                <FilterSelect label="SALESFORCE" value={filters.salesperson} options={salespersons} onChange={(v) => setFilters({ ...filters, salesperson: v })} />
+                <FilterSelect label="CLIENT/ENTITY" value={filters.orderOwner} options={owners} onChange={(v) => setFilters({ ...filters, orderOwner: v })} />
+                <FilterSelect label="PRODUCTION GATE" value={filters.approvalProduction} options={["Pending", "Approved", "Hold"]} onChange={(v) => setFilters({ ...filters, approvalProduction: v })} />
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 
-      <div className="mb-4 flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search by name, owner, quotation..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className="rounded-[32px] border border-slate-200 bg-white/60 backdrop-blur-md shadow-xl shadow-slate-200/40 overflow-hidden group/table">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader className="bg-slate-50/50">
+              <TableRow className="border-slate-100 hover:bg-transparent">
+                <TableHead className="py-5 px-6 font-black text-[10px] uppercase tracking-widest text-slate-400">Reference</TableHead>
+                <TableHead className="py-5 font-black text-[10px] uppercase tracking-widest text-slate-900">Project Entity</TableHead>
+                <TableHead className="py-5 font-black text-[10px] uppercase tracking-widest text-slate-400">Specifications</TableHead>
+                <TableHead className="py-5 font-black text-[10px] uppercase tracking-widest text-slate-400">Design Velocity</TableHead>
+                <TableHead className="py-5 font-black text-[10px] uppercase tracking-widest text-slate-400">Gatekeepers</TableHead>
+                <TableHead className="py-5 font-black text-[10px] uppercase tracking-widest text-slate-400 text-right px-6">Remarks</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-32">
+                    <div className="flex flex-col items-center gap-4">
+                      <Loader2 className="h-10 w-10 animate-spin text-primary/40" />
+                      <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-300">Synchronizing Design Stream...</p>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : filtered.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-32">
+                    <div className="flex flex-col items-center gap-4 opacity-50">
+                      <Layout className="h-12 w-12 text-slate-200" />
+                      <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">No specifications required</p>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filtered.map((o) => {
+                  const releasePending = Math.max(0, o.surveyDone - o.designReleased);
+                  return (
+                    <TableRow key={o.id} className="group/row hover:bg-slate-50/80 transition-all border-slate-100 h-20">
+                      <TableCell className="px-6">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-[10px] font-black text-slate-900 leading-none">Q: {o.quote_no || "N/A"}</span>
+                          <span className="text-[9px] font-bold text-slate-400">SO: {o.sales_order_no || "PENDING"}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col max-w-[240px]">
+                          <Link to={`/orders/${o.id}`} className="font-bold text-slate-900 hover:text-primary transition-colors truncate">{o.order_name}</Link>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge variant="outline" className="text-[8px] font-black uppercase py-0 px-1 border-slate-200 bg-white text-slate-500">{o.order_type}</Badge>
+                            <span className="text-[10px] text-slate-400 font-medium truncate">{o.dealer_name}</span>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="text-[11px] font-bold text-slate-900 truncate max-w-[150px]" title={o.product_type}>{o.product_type}</span>
+                          <span className="text-[9px] font-black text-slate-400 uppercase">{o.colour_shade || "DEFAULT"}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-[14px] font-black text-slate-900">{o.designReleased}</span>
+                            <span className="text-[9px] font-black text-slate-300 uppercase">/ {o.surveyDone} UNITS</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="h-1.5 flex-1 bg-slate-100 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-primary transition-all duration-1000"
+                                style={{ width: `${(o.designReleased / (o.surveyDone || 1)) * 100}%` }}
+                              />
+                            </div>
+                            {releasePending > 0 && (
+                              <span className="text-[9px] font-black text-amber-600">-{releasePending}</span>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest">
+                            <StatusDot status={o.approval_for_production === "Approved" ? "green" : o.approval_for_production === "Hold" ? "amber" : "grey"} />
+                            <span className={approvalColor(o.approval_for_production)}>{o.approval_for_production}</span>
+                          </div>
+                          <span className="text-[9px] text-slate-400 font-medium">{o.salesperson}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="px-6 text-right">
+                        <span className="text-[11px] text-slate-500 italic max-w-[150px] truncate block ml-auto" title={(o as any).design_remarks || ""}>
+                          {(o as any).design_remarks || "—"}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
         </div>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button size="sm" variant="outline" className="gap-1.5">
-              <Filter className="h-4 w-4" />
-              Filters
-              {activeFilterCount > 0 && (
-                <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs rounded-full">
-                  {activeFilterCount}
-                </Badge>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-72 space-y-3" align="start">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Filters</span>
-              {activeFilterCount > 0 && (
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setFilters(emptyFilters)}>
-                  <X className="h-3 w-3 mr-1" /> Clear
-                </Button>
-              )}
-            </div>
-            <FilterSelect label="Salesperson" value={filters.salesperson} options={salespersons} onChange={(v) => setFilters({ ...filters, salesperson: v })} />
-            <FilterSelect label="Order Owner" value={filters.orderOwner} options={owners} onChange={(v) => setFilters({ ...filters, orderOwner: v })} />
-            <FilterSelect label="Approved for Production" value={filters.approvalProduction} options={["Pending", "Approved", "Hold"]} onChange={(v) => setFilters({ ...filters, approvalProduction: v })} />
-          </PopoverContent>
-        </Popover>
       </div>
-
-      <Tabs value={tab} onValueChange={setTab} className="mb-4">
-        <TabsList>
-          <TabsTrigger value="pending">Pending Design</TabsTrigger>
-          <TabsTrigger value="released">Design Released</TabsTrigger>
-          <TabsTrigger value="all">All Orders</TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      <div className="rounded-md border bg-card overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="min-w-[80px]">Type</TableHead>
-              <TableHead className="min-w-[140px]">Order Name</TableHead>
-              <TableHead className="min-w-[120px]">Owner</TableHead>
-              <TableHead className="min-w-[100px]">Quotation No</TableHead>
-              <TableHead className="min-w-[80px]">SO No</TableHead>
-              <TableHead className="min-w-[100px]">Shade</TableHead>
-              <TableHead className="min-w-[100px]">Salesperson</TableHead>
-              <TableHead className="min-w-[140px]">Product Type</TableHead>
-              <TableHead className="text-right min-w-[60px]">Windows</TableHead>
-              <TableHead className="text-right min-w-[60px]">Sqft</TableHead>
-              <TableHead className="text-right min-w-[90px]">Order Value</TableHead>
-              <TableHead className="text-right min-w-[100px]">Design Released</TableHead>
-              <TableHead className="text-right min-w-[110px]">Release Pending</TableHead>
-              <TableHead className="min-w-[120px]">Prod. Approval</TableHead>
-              <TableHead className="min-w-[120px]">Remarks</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow><TableCell colSpan={16} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
-            ) : filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={16} className="text-center py-8 text-muted-foreground">No orders found</TableCell></TableRow>
-            ) : (
-              filtered.map((order) => {
-                const surveyDone = order.survey_done_windows || 0;
-                const released = order.design_released_windows || 0;
-                const releasePending = Math.max(0, surveyDone - released);
-                return (
-                  <TableRow key={order.id} className="hover:bg-muted/50">
-                    <TableCell><Badge variant="outline" className="text-xs">{order.order_type}</Badge></TableCell>
-                    <TableCell>
-                      <Link to={`/orders/${order.id}`} className="font-medium text-primary hover:underline">{order.order_name}</Link>
-                    </TableCell>
-                    <TableCell className="text-sm">{order.dealer_name}</TableCell>
-                    <TableCell className="text-sm">{order.quote_no || "—"}</TableCell>
-                    <TableCell className="text-sm">{order.sales_order_no || "—"}</TableCell>
-                    <TableCell className="text-sm">{order.colour_shade || "—"}</TableCell>
-                    <TableCell className="text-sm">{order.salesperson || "—"}</TableCell>
-                    <TableCell className="text-sm max-w-[180px] truncate" title={order.product_type}>{order.product_type}</TableCell>
-                    <TableCell className="text-right">{order.total_windows}</TableCell>
-                    <TableCell className="text-right">{Number(order.sqft).toFixed(1)}</TableCell>
-                    <TableCell className="text-right font-medium">₹{Number(order.order_value).toLocaleString()}</TableCell>
-                    <TableCell className="text-right font-medium">{released}</TableCell>
-                    <TableCell className="text-right">{releasePending > 0 ? releasePending : "—"}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={approvalColor(order.approval_for_production)}>
-                        {order.approval_for_production}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm max-w-[120px] truncate" title={order.design_remarks || ""}>{order.design_remarks || "—"}</TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
+    </PageWrapper>
   );
 }
 
 function FilterSelect({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
   return (
-    <div className="space-y-1">
-      <label className="text-xs text-muted-foreground">{label}</label>
+    <div className="space-y-2">
+      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{label}</label>
       <Select value={value || "all"} onValueChange={(v) => onChange(v === "all" ? "" : v)}>
-        <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All</SelectItem>
-          {options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+        <SelectTrigger className="h-11 bg-slate-50 border-none rounded-2xl text-[11px] font-bold uppercase tracking-wider shadow-inner">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent className="rounded-2xl border-none shadow-2xl">
+          <SelectItem value="all" className="text-[11px] font-bold uppercase">All Records</SelectItem>
+          {options.map((o) => (
+            <SelectItem key={o} value={o} className="text-[11px] font-bold uppercase">{o}</SelectItem>
+          ))}
         </SelectContent>
       </Select>
     </div>

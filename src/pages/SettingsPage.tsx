@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
-import { Settings, Users, Database, Factory, GitBranch } from "lucide-react";
+import { Settings, Users, Database } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const tabs = [

@@ -1,9 +1,9 @@
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { ArrowUpRight, LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getMaterialDotColor, Order } from "@/lib/order-logic";
+import { useEffect } from "react";
 
 /**
  * A sleek, interactive KPI card for dashboard metrics.
@@ -78,7 +78,7 @@ export const StatusDot = ({ status, className }: { status: "green" | "amber" | "
     yellow: "bg-yellow-400",
     grey: "bg-slate-300",
   };
-  
+
   return <span className={cn("inline-block w-2 h-2 rounded-full mr-1.5 flex-shrink-0", colorMap[status] || colorMap.grey, className)} />;
 };
 
@@ -124,9 +124,9 @@ export const MaterialsStatusDetail = ({ order }: { order: Order }) => {
         const tooltip = `${item.label}: ${item.avl || item.po}${item.date ? ` (Del: ${item.date})` : ""}`;
 
         return (
-          <div 
-            key={i} 
-            title={tooltip} 
+          <div
+            key={i}
+            title={tooltip}
             className={cn(
               "w-4 h-4 rounded-sm flex items-center justify-center text-[10px] font-bold text-white shadow-sm",
               colorClasses[dot]
@@ -139,3 +139,56 @@ export const MaterialsStatusDetail = ({ order }: { order: Order }) => {
     </div>
   );
 };
+
+/**
+ * A layout wrapper for pages that handles document metadata (SEO) and entry animations.
+ */
+export const PageWrapper = ({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) => {
+  useEffect(() => {
+    document.title = `${title} | Pulse Industrial Engine`;
+    // Meta description could be added here via DOM if needed, but for SPAs title is primary.
+  }, [title]);
+
+  return (
+    <div className={cn("animate-in fade-in slide-in-from-bottom-2 duration-700", className)}>
+      {children}
+    </div>
+  );
+};
+
+/**
+ * A premium page header with support for search, filters, and primary actions.
+ */
+export const PageHeader = ({
+  title,
+  subtitle,
+  icon: Icon,
+  children,
+  className
+}: {
+  title: string;
+  subtitle?: string | React.ReactNode;
+  icon: LucideIcon;
+  children?: React.ReactNode;
+  className?: string;
+}) => (
+  <div className={cn("flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8 group/header", className)}>
+    <div className="flex items-center gap-5">
+      <div className="h-14 w-14 rounded-[20px] bg-primary flex items-center justify-center shadow-[0_12px_24px_rgba(var(--primary),0.2)] group-hover/header:rotate-6 transition-transform duration-500">
+        <Icon className="h-7 w-7 text-white" />
+      </div>
+      <div>
+        <h1 className="text-3xl font-black tracking-tight text-slate-900 uppercase italic leading-none">{title}</h1>
+        {subtitle && (
+          <div className="text-slate-400 font-bold uppercase tracking-[0.2em] text-[10px] mt-2 flex items-center gap-2">
+            <span className="h-px w-6 bg-slate-200" />
+            {subtitle}
+          </div>
+        )}
+      </div>
+    </div>
+    <div className="flex items-center gap-3">
+      {children}
+    </div>
+  </div>
+);
