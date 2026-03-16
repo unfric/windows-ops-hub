@@ -115,3 +115,73 @@ export function getMaterialDotColor(avail: string, po: string): "blue" | "green"
   if (avail === "Pending PO" || avail === "Pending Coating" || po === "Pending PO" || po === "Pending Coating") return "red";
   return "grey";
 }
+/**
+ * Aggregates raw order data into UI-ready objects with calculated metrics.
+ */
+export function aggregateOrders(data: any) {
+  const rawOrders = (data.orders || []) as unknown as Order[];
+
+  // Map stores
+  const paymentMap: Record<string, number> = {};
+  (data.payment_logs || []).forEach((p: any) => {
+    if (p.status === "Confirmed") paymentMap[p.order_id] = (paymentMap[p.order_id] || 0) + Number(p.amount);
+  });
+
+  const packedMap: Record<string, number> = {};
+  const stagesMap: Record<string, Record<string, number>> = {};
+  (data.production_logs || []).forEach((p: any) => {
+    if (p.stage === "Packed") packedMap[p.order_id] = (packedMap[p.order_id] || 0) + Number(p.windows_completed);
+    if (!stagesMap[p.order_id]) stagesMap[p.order_id] = { "Cutting": 0, "Assembly": 0, "Glazing": 0, "Quality": 0, "Packed": 0 };
+    if (p.stage in stagesMap[p.order_id]) stagesMap[p.order_id][p.stage] += Number(p.windows_completed || 0);
+  });
+
+  const dispatchMap: Record<string, number> = {};
+  (data.dispatch_logs || []).forEach((d: any) => {
+    dispatchMap[d.order_id] = (dispatchMap[d.order_id] || 0) + Number(d.windows_dispatched);
+  });
+
+  const installMap: Record<string, number> = {};
+  (data.installation_logs || []).forEach((i: any) => {
+    installMap[i.order_id] = (installMap[i.order_id] || 0) + Number(i.windows_installed);
+  });
+
+  const reworkOpenMap: Record<string, number> = {};
+  const reworkTotalMap: Record<string, number> = {};
+  (data.rework_logs || []).forEach((r: any) => {
+    reworkTotalMap[r.order_id] = (reworkTotalMap[r.order_id] || 0) + 1;
+    if (r.status === "Pending" || r.status === "In Progress") {
+      reworkOpenMap[r.order_id] = (reworkOpenMap[r.order_id] || 0) + 1;
+    }
+  });
+
+  const aggregated: AggregatedOrder[] = rawOrders.map((o) => {
+    const receipt = paymentMap[o.id] || 0;
+    const packed = packedMap[o.id] || 0;
+    const dispatched = dispatchMap[o.id] || 0;
+    const installed = installMap[o.id] || 0;
+    const openRework = reworkOpenMap[o.id] || 0;
+    const totalRework = reworkTotalMap[o.id] || 0;
+    const atw = o.design_released_windows || 0;
+
+    const partial: AggregatedOrder = {
+      ...o,
+      receipt,
+      balance: Number(o.order_value) - receipt,
+      surveyDone: o.survey_done_windows || 0,
+      designReleased: o.design_released_windows || 0,
+      productionPacked: packed,
+      atw,
+      dispatchedWindows: dispatched,
+      installedWindows: installed,
+      reworkOpenCount: openRework,
+      reworkTotalCount: totalRework,
+      materialsStatus: getMaterialsStatus(o),
+      dispatchLabel: getDispatchLabel(dispatched, atw),
+      nextAction: "",
+    };
+    partial.nextAction = getNextAction(partial);
+    return partial;
+  });
+
+  return { aggregated, stagesMap, orders: rawOrders };
+}

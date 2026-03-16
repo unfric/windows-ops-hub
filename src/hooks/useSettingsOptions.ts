@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { api } from "@/services/api";
 
 export interface SettingsItem {
@@ -45,15 +45,22 @@ export function useSettingsOptions(enabled: boolean = true) {
     fetchSettings();
   }, [enabled]);
 
-  const ownerOptions = [
+  const ownerOptions = useMemo(() => [
     ...(data?.dealers || []).map((d) => ({ label: `${d.name} (Dealer)`, value: d.name })),
     ...(data?.project_client_names || []).map((c) => ({ label: `${c.name} (Client)`, value: c.name })),
-  ];
+  ], [data]);
 
-  const getAppSetting = (key: string) => data?.app_settings.find((s) => s.key === key)?.value;
+  const getAppSetting = useCallback((key: string) => 
+    data?.app_settings.find((s) => s.key === key)?.value
+  , [data]);
 
-  const reworkCategories = getAppSetting("rework_categories")?.split(",").map((s) => s.trim()) || [];
-  const reworkTeams = getAppSetting("rework_responsible_teams")?.split(",").map((s) => s.trim()) || [];
+  const reworkCategories = useMemo(() => 
+    getAppSetting("rework_categories")?.split(",").map((s) => s.trim()) || []
+  , [getAppSetting]);
+
+  const reworkTeams = useMemo(() => 
+    getAppSetting("rework_responsible_teams")?.split(",").map((s) => s.trim()) || []
+  , [getAppSetting]);
 
   return {
     settings: data,
