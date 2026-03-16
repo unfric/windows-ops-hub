@@ -177,7 +177,7 @@ export default function OrdersDashboard() {
             <Upload className="mr-2 h-4 w-4" /> Import Orders
           </Button>
 
-          <Button variant="outline" onClick={downloadImportTemplate}>
+          <Button variant="outline" onClick={async () => await downloadImportTemplate()}>
             <FileSpreadsheet className="mr-2 h-4 w-4" /> Template
           </Button>
 

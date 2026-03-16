@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "@/services/api";
 import { Input } from "@/components/ui/input";
@@ -7,22 +7,22 @@ import { Badge } from "@/components/ui/badge";
 import { useUserRoles } from "@/hooks/useUserRoles";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Check } from "lucide-react";
+import { ArrowLeft, Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { STATUS_OPTIONS } from "@/lib/statusConfig";
 import { triggerStatusNotification } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 
-import ReworkSection from "@/components/ReworkSection";
-import InstallationSection from "@/components/InstallationSection";
-import FinanceSection from "@/components/FinanceSection";
-import SurveySection from "@/components/SurveySection";
-import DesignSection from "@/components/DesignSection";
-import StoreSection from "@/components/StoreSection";
-import ProcurementSection from "@/components/ProcurementSection";
-import ProductionSection from "@/components/ProductionSection";
-import DispatchSection from "@/components/DispatchSection";
-import OrderActivityLog from "@/components/OrderActivityLog";
+const ReworkSection = lazy(() => import("@/components/ReworkSection"));
+const InstallationSection = lazy(() => import("@/components/InstallationSection"));
+const FinanceSection = lazy(() => import("@/components/FinanceSection"));
+const SurveySection = lazy(() => import("@/components/SurveySection"));
+const DesignSection = lazy(() => import("@/components/DesignSection"));
+const StoreSection = lazy(() => import("@/components/StoreSection"));
+const ProcurementSection = lazy(() => import("@/components/ProcurementSection"));
+const ProductionSection = lazy(() => import("@/components/ProductionSection"));
+const DispatchSection = lazy(() => import("@/components/DispatchSection"));
+const OrderActivityLog = lazy(() => import("@/components/OrderActivityLog"));
 import { usePipelineSteps } from "@/hooks/usePipelineSteps";
 
 export default function OrderDetailPage() {
@@ -139,19 +139,25 @@ export default function OrderDetailPage() {
         onStepClick={(tab) => setActiveTab(tab)}
       />
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        {/* Hidden TabsList as requested */}
-        <TabsList className="hidden">
-          <TabsTrigger value="details">Details</TabsTrigger>
-          <TabsTrigger value="survey">Survey</TabsTrigger>
-          <TabsTrigger value="finance">Finance</TabsTrigger>
-          <TabsTrigger value="design">Design</TabsTrigger>
-          <TabsTrigger value="materials">Materials</TabsTrigger>
-          <TabsTrigger value="production">Production</TabsTrigger>
-          <TabsTrigger value="dispatch">Dispatch</TabsTrigger>
-          <TabsTrigger value="installation">Installation</TabsTrigger>
-          <TabsTrigger value="rework">Rework</TabsTrigger>
-        </TabsList>
+      <Suspense fallback={
+        <div className="flex flex-col items-center justify-center p-12 space-y-4 text-muted-foreground animate-in fade-in duration-500">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm font-medium">Loading section...</p>
+        </div>
+      }>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          {/* Hidden TabsList as requested */}
+          <TabsList className="hidden">
+            <TabsTrigger value="details">Details</TabsTrigger>
+            <TabsTrigger value="survey">Survey</TabsTrigger>
+            <TabsTrigger value="finance">Finance</TabsTrigger>
+            <TabsTrigger value="design">Design</TabsTrigger>
+            <TabsTrigger value="materials">Materials</TabsTrigger>
+            <TabsTrigger value="production">Production</TabsTrigger>
+            <TabsTrigger value="dispatch">Dispatch</TabsTrigger>
+            <TabsTrigger value="installation">Installation</TabsTrigger>
+            <TabsTrigger value="rework">Rework</TabsTrigger>
+          </TabsList>
 
         <TabsContent value="details" className="mt-4">
           <Card>
@@ -215,15 +221,15 @@ export default function OrderDetailPage() {
         </TabsContent>
 
         <TabsContent value="survey" className="mt-4">
-          <SurveySection orderId={id!} order={order} onRefresh={fetchAll} updateOrder={updateOrder} readOnly={!canEdit("survey")} />
+          <SurveySection orderId={id!} order={order} onRefresh={fetchAll} readOnly={!canEdit("survey")} />
         </TabsContent>
 
         <TabsContent value="finance" className="mt-4">
-          <FinanceSection orderId={id!} order={order} onRefresh={fetchAll} updateOrder={updateOrder} readOnly={!canEdit("finance")} />
+          <FinanceSection orderId={id!} order={order} onRefresh={fetchAll} readOnly={!canEdit("finance")} />
         </TabsContent>
 
         <TabsContent value="design" className="mt-4">
-          <DesignSection orderId={id!} order={order} onRefresh={fetchAll} updateOrder={updateOrder} readOnly={!canEdit("design")} />
+          <DesignSection orderId={id!} order={order} onRefresh={fetchAll} readOnly={!canEdit("design")} />
         </TabsContent>
 
         <TabsContent value="materials" className="mt-4 space-y-6">
@@ -241,17 +247,18 @@ export default function OrderDetailPage() {
         </TabsContent>
 
         <TabsContent value="dispatch" className="mt-4">
-          <DispatchSection orderId={id!} order={order} onRefresh={fetchAll} updateOrder={updateOrder} readOnly={!canEdit("dispatch")} />
+          <DispatchSection orderId={id!} order={order} onRefresh={fetchAll} readOnly={!canEdit("dispatch")} />
         </TabsContent>
 
         <TabsContent value="installation" className="mt-4">
-          <InstallationSection orderId={id!} order={order} onRefresh={fetchAll} updateOrder={updateOrder} readOnly={!canEdit("installation")} />
+          <InstallationSection orderId={id!} order={order} onRefresh={fetchAll} readOnly={!canEdit("installation")} />
         </TabsContent>
 
         <TabsContent value="rework" className="mt-4">
           <ReworkSection orderId={id!} order={order} onRefresh={fetchAll} readOnly={!canEdit(["production", "installation", "design"])} />
         </TabsContent>
       </Tabs>
+    </Suspense>
     </div>
   );
 }

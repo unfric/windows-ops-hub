@@ -1,4 +1,13 @@
 
+export interface OrdersApiResponse {
+  orders: Order[];
+  payment_logs?: any[];
+  production_logs?: any[];
+  dispatch_logs?: any[];
+  installation_logs?: any[];
+  rework_logs?: any[];
+}
+
 export interface Order {
   id: string;
   order_type: string;
@@ -118,7 +127,7 @@ export function getMaterialDotColor(avail: string, po: string): "blue" | "green"
 /**
  * Aggregates raw order data into UI-ready objects with calculated metrics.
  */
-export function aggregateOrders(data: any) {
+export function aggregateOrders(data: OrdersApiResponse) {
   const rawOrders = (data.orders || []) as unknown as Order[];
 
   // Map stores

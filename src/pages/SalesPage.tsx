@@ -198,7 +198,7 @@ export default function SalesPage() {
     input.click();
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     const headers = [
       "Quotation No", "SO No", "Order Name", "Owner", "Salesperson",
       "Product", "Shade", "Win", "Value", "Receipt", "Balance",
@@ -221,7 +221,7 @@ export default function SalesPage() {
       "Dispatch Status": dispatchStatusMap[o.id] || "Not Dispatched"
     }));
 
-    exportDataToExcel(data, headers, `sales_export_${tab}.xlsx`);
+    await exportDataToExcel(data, headers, `sales_export_${tab}.xlsx`);
   };
 
   const getAvlToWork = (o: Order) => {
@@ -241,7 +241,7 @@ export default function SalesPage() {
           <p className="text-sm text-muted-foreground">{orders.length} total orders</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => downloadImportTemplate()}>
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={async () => await downloadImportTemplate()}>
             <FileSpreadsheet className="h-4 w-4" /> Template
           </Button>
           <Button size="sm" variant="outline" className="gap-1.5" onClick={handleImport}>

@@ -1,7 +1,7 @@
 import { api } from "@/services/api";
 
 /** Call the send-alert edge function for email alerts */
-export async function sendEmailAlert(orderId: string, orderName: string, field: string, newValue: string, oldValue?: string) {
+export async function sendEmailAlert(orderId: string, orderName: string, field: string, newValue: string) {
   try {
     // This calls the specific email alert function
     await api.notifications.triggerAlert({ orderId, orderName, field, newValue });

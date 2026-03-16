@@ -1,4 +1,3 @@
-import * as XLSX from "xlsx";
 import { api } from "@/services/api";
 
 /** Column mapping: Excel header → DB field */
@@ -36,6 +35,17 @@ const FIELD_MAP: Record<string, string> = {
   "Disp Approval": "approval_for_dispatch",
   "Dispatch Status": "dispatch_status",
   "Installation Status": "installation_status",
+  
+  // Remarks
+  "Finance Remarks": "finance_remarks",
+  "Procurement Remarks": "procurement_remarks",
+  "Store Remarks": "store_remarks",
+  "Design Remarks": "design_remarks",
+  "Survey Remarks": "survey_remarks",
+
+  // Rework
+  "Rework Issue": "rework_issue",
+  "Rework Qty": "rework_qty",
 };
 
 const IMPORT_HEADERS = Object.keys(FIELD_MAP);
@@ -47,6 +57,7 @@ interface ImportResult {
 }
 
 export async function importOrdersFromFile(file: File): Promise<ImportResult> {
+  const XLSX = await import("xlsx");
   const buffer = await file.arrayBuffer();
   const wb = XLSX.read(buffer, { type: "array" });
   const ws = wb.Sheets[wb.SheetNames[0]];
@@ -125,11 +136,12 @@ export async function importOrdersFromFile(file: File): Promise<ImportResult> {
 }
 
 /** Comprehensive export for Global Order dashboard */
-export function exportOrdersToExcel(
+export async function exportOrdersToExcel(
   orders: Record<string, any>[],
   receiptMap: Record<string, number> = {},
   filename = "orders.xlsx"
 ) {
+  const XLSX = await import("xlsx");
   const exportRows = orders.map((o) => {
     const receipt = receiptMap[o.id] ?? 0;
     const balance = (Number(o.order_value) || 0) - receipt;
@@ -162,7 +174,8 @@ export function exportOrdersToExcel(
 }
 
 /** Generic export for module-specific dashboards */
-export function exportDataToExcel(data: any[], headers: string[], filename: string) {
+export async function exportDataToExcel(data: any[], headers: string[], filename: string) {
+  const XLSX = await import("xlsx");
   const ws = XLSX.utils.json_to_sheet(data, { header: headers });
 
   // Auto-width
@@ -177,7 +190,8 @@ export function exportDataToExcel(data: any[], headers: string[], filename: stri
 }
 
 /** Generate a blank template */
-export function downloadImportTemplate() {
+export async function downloadImportTemplate() {
+  const XLSX = await import("xlsx");
   const ws = XLSX.utils.json_to_sheet([], { header: IMPORT_HEADERS });
   ws["!cols"] = IMPORT_HEADERS.map((h) => ({ wch: h.length + 4 }));
   const wb = XLSX.utils.book_new();
