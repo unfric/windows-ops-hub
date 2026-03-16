@@ -13,7 +13,6 @@ import { format } from "date-fns";
 import OrderActivityLog from "./OrderActivityLog";
 
 const STAGES = ["Cutting", "Assembly", "Glazing", "Quality", "Packed"] as const;
-const STAGE_ORDER: Record<string, number> = { Cutting: 0, Assembly: 1, Glazing: 2, Quality: 3, Packed: 4 };
 const STAGE_PREREQ: Record<string, string> = {
   Assembly: "Cutting",
   Glazing: "Assembly",

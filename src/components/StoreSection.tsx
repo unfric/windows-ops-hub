@@ -1,8 +1,6 @@
-import { useState } from "react";
 import { api } from "@/services/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -60,9 +58,6 @@ export default function StoreSection({ orderId, order, onRefresh, readOnly }: St
       <CardContent className="space-y-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {FIELDS.map((f) => {
-            const currentVal = order[f.field];
-            const isCurrentlyAvailable = currentVal === "Yes" || currentVal === "Delivered";
-
             return (
               <div key={f.field} className="space-y-1">
                 <Label className="text-xs text-muted-foreground">{f.label}</Label>

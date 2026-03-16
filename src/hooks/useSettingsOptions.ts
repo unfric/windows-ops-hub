@@ -16,6 +16,7 @@ export interface SettingsData {
   salespersons: SettingsItem[];
   other_product_types: SettingsItem[];
   commercial_statuses: SettingsItem[];
+  app_settings: { key: string; value: string }[];
 }
 
 /**
@@ -49,9 +50,17 @@ export function useSettingsOptions(enabled: boolean = true) {
     ...(data?.project_client_names || []).map((c) => ({ label: `${c.name} (Client)`, value: c.name })),
   ];
 
+  const getAppSetting = (key: string) => data?.app_settings.find((s) => s.key === key)?.value;
+
+  const reworkCategories = getAppSetting("rework_categories")?.split(",").map((s) => s.trim()) || [];
+  const reworkTeams = getAppSetting("rework_responsible_teams")?.split(",").map((s) => s.trim()) || [];
+
   return {
     settings: data,
     ownerOptions,
+    reworkCategories,
+    reworkTeams,
+    getAppSetting,
     loading,
     error,
   };

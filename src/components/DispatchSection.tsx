@@ -4,24 +4,21 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import OrderActivityLog from "./OrderActivityLog";
-import { cn } from "@/lib/utils";
 
 interface Props {
   orderId: string;
   order: any;
   onRefresh: () => void;
-  updateOrder: (field: string, value: any) => void;
   readOnly?: boolean;
 }
 
-export default function DispatchSection({ orderId, order, onRefresh, updateOrder, readOnly }: Props) {
+export default function DispatchSection({ orderId, order, onRefresh, readOnly }: Props) {
   const [adding, setAdding] = useState(false);
   const [dispatchDate, setDispatchDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [windowsCount, setWindowsCount] = useState("");

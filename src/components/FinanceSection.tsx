@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { api } from "@/services/api";
+import { useFinanceActions, Payment } from "@/hooks/useFinanceActions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,35 +19,30 @@ import { Plus, Check, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
-interface Payment {
-  id: string;
-  amount: number;
-  payment_date: string | null;
-  payment_mode: string | null;
-  source_module: string;
-  status: string;
-  confirmed_by: string | null;
-  confirmed_at: string | null;
-  created_at: string;
-}
-
-const APPROVAL_OPTIONS = ["Pending", "Approved", "Hold"];
-
+import { useState } from "react";
 import OrderActivityLog from "./OrderActivityLog";
 
-export default function FinanceSection({ orderId, order, onRefresh, updateOrder, readOnly }: {
+export default function FinanceSection({ orderId, order, onRefresh, readOnly }: {
   orderId: string;
   order: any;
   onRefresh: () => void;
-  updateOrder: (field: string, value: any) => void;
   readOnly?: boolean;
 }) {
+  const { 
+    submitting, 
+    addPayment, 
+    updatePayment, 
+    confirmPayment, 
+    deleteDraftPayment, 
+    updateApproval, 
+    updateRemarks 
+  } = useFinanceActions(orderId, onRefresh);
+
   const [addOpen, setAddOpen] = useState(false);
   const [editPayment, setEditPayment] = useState<Payment | null>(null);
   const [amount, setAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState("");
   const [paymentMode, setPaymentMode] = useState("");
-  const [submitting, setSubmitting] = useState(false);
 
   const payments = (order.payment_logs || []) as Payment[];
   const confirmedPayments = payments.filter(p => p.status === "Confirmed");
@@ -66,25 +60,14 @@ export default function FinanceSection({ orderId, order, onRefresh, updateOrder,
       toast.error("Enter a valid amount");
       return;
     }
-    setSubmitting(true);
-    try {
-      await api.orders.addLog("payment_logs", {
-        order_id: orderId,
-        amount: Number(amount),
-        payment_date: paymentDate || null,
-        payment_mode: paymentMode || null,
-        source_module: "Finance",
-        status: "Confirmed",
-        confirmed_at: new Date().toISOString(),
-      });
-      toast.success("Payment recorded");
+    const success = await addPayment({
+      amount: Number(amount),
+      payment_date: paymentDate,
+      payment_mode: paymentMode,
+    });
+    if (success) {
       resetForm();
       setAddOpen(false);
-      onRefresh();
-    } catch (error: any) {
-      toast.error(error.message);
-    } finally {
-      setSubmitting(false);
     }
   };
 
@@ -93,47 +76,14 @@ export default function FinanceSection({ orderId, order, onRefresh, updateOrder,
       toast.error("Enter a valid amount");
       return;
     }
-    setSubmitting(true);
-    try {
-      await api.orders.updateLog("payment_logs", editPayment.id, {
-        amount: Number(amount),
-        payment_date: paymentDate || null,
-        payment_mode: paymentMode || null,
-      });
-      toast.success("Payment updated");
+    const success = await updatePayment(editPayment.id, {
+      amount: Number(amount),
+      payment_date: paymentDate,
+      payment_mode: paymentMode,
+    });
+    if (success) {
       resetForm();
       setEditPayment(null);
-      onRefresh();
-    } catch (error: any) {
-      toast.error(error.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const confirmPayment = async (p: Payment) => {
-    try {
-      await api.orders.updateLog("payment_logs", p.id, {
-        status: "Confirmed",
-        confirmed_at: new Date().toISOString(),
-      });
-      toast.success("Payment confirmed");
-      onRefresh();
-    } catch (error: any) {
-      toast.error(error.message);
-    }
-  };
-
-  const deleteDraftPayment = async (p: Payment) => {
-    try {
-      if (p.source_module === "Sales") {
-        await api.orders.updateField(orderId, "advance_received", 0, "Finance");
-      }
-      await api.orders.deleteLog("payment_logs", p.id);
-      toast.success("Draft payment deleted");
-      onRefresh();
-    } catch (error: any) {
-      toast.error(error.message);
     }
   };
 
@@ -144,26 +94,16 @@ export default function FinanceSection({ orderId, order, onRefresh, updateOrder,
     setPaymentMode(p.payment_mode || "");
   };
 
-  const updateApproval = async (field: string, value: string) => {
+  const APPROVAL_OPTIONS = ["Pending", "Approved", "Hold"];
+
+  const handleUpdateApproval = (field: string, value: string) => {
     if (readOnly) return;
-    try {
-      await api.orders.updateField(orderId, field, value, "Finance");
-      toast.success("Updated");
-      onRefresh();
-    } catch (error: any) {
-      toast.error(error.message);
-    }
+    updateApproval(field, value);
   };
 
-  const updateRemarks = async (value: string) => {
+  const handleUpdateRemarks = (value: string) => {
     if (readOnly) return;
-    try {
-      await api.orders.updateField(orderId, "finance_remarks", value, "Finance");
-      toast.success("Remarks updated");
-      onRefresh();
-    } catch (error: any) {
-      toast.error(error.message);
-    }
+    updateRemarks(value);
   };
 
   return (
@@ -203,7 +143,7 @@ export default function FinanceSection({ orderId, order, onRefresh, updateOrder,
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">Approval for Production</Label>
-              <Select disabled={readOnly} value={order.approval_for_production || "Pending"} onValueChange={(v) => updateApproval("approval_for_production", v)}>
+              <Select disabled={readOnly} value={order.approval_for_production || "Pending"} onValueChange={(v) => handleUpdateApproval("approval_for_production", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {APPROVAL_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
@@ -212,7 +152,7 @@ export default function FinanceSection({ orderId, order, onRefresh, updateOrder,
             </div>
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">Approval for Dispatch</Label>
-              <Select disabled={readOnly} value={order.approval_for_dispatch || "Pending"} onValueChange={(v) => updateApproval("approval_for_dispatch", v)}>
+              <Select disabled={readOnly} value={order.approval_for_dispatch || "Pending"} onValueChange={(v) => handleUpdateApproval("approval_for_dispatch", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {APPROVAL_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
@@ -225,7 +165,7 @@ export default function FinanceSection({ orderId, order, onRefresh, updateOrder,
                 className={cn("min-h-[60px]", readOnly && "bg-muted")}
                 defaultValue={order.finance_remarks || ""}
                 readOnly={readOnly}
-                onBlur={(e) => updateRemarks(e.target.value)}
+                onBlur={(e) => handleUpdateRemarks(e.target.value)}
                 placeholder={readOnly ? "" : "Finance notes..."}
               />
             </div>
@@ -290,10 +230,10 @@ export default function FinanceSection({ orderId, order, onRefresh, updateOrder,
                             </Button>
                             {p.status === "Draft" && (
                               <>
-                                <Button variant="ghost" size="icon" className="h-7 w-7 text-success" onClick={() => confirmPayment(p)} title="Confirm">
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-success" onClick={() => confirmPayment(p.id)} title="Confirm">
                                   <Check className="h-3.5 w-3.5" />
                                 </Button>
-                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteDraftPayment(p)} title="Delete">
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteDraftPayment(p.id, p.source_module)} title="Delete">
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </Button>
                               </>

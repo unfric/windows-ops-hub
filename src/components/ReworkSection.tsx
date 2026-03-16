@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api } from "@/services/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,7 @@ import {
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { useSettingsOptions } from "@/hooks/useSettingsOptions";
 import OrderActivityLog from "./OrderActivityLog";
 
 const REWORK_STATUSES = ["Pending", "In Progress", "Solved", "Closed"];
@@ -23,30 +24,11 @@ interface ReworkSectionProps {
 }
 
 export default function ReworkSection({ orderId, order, onRefresh, readOnly }: ReworkSectionProps) {
+  const { reworkCategories, reworkTeams } = useSettingsOptions();
   const [showForm, setShowForm] = useState(false);
   const [qty, setQty] = useState("");
   const [issueDescription, setIssueDescription] = useState("");
-  const [categories, setCategories] = useState<string[]>(["Manufacturing", "Design", "Survey", "Installation", "Damage"]);
-  const [responsibleTeams, setResponsibleTeams] = useState<string[]>(["Factory", "Sales", "Installation Team", "Logistics"]);
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    const fetchConfig = async () => {
-      try {
-        const data = await api.settings.list();
-        if (data) {
-          const cats = data.find((s: any) => s.key === "rework_categories");
-          if (cats?.value) setCategories(cats.value.split(",").map((s: string) => s.trim()));
-
-          const teams = data.find((s: any) => s.key === "rework_responsible_teams");
-          if (teams?.value) setResponsibleTeams(teams.value.split(",").map((s: string) => s.trim()));
-        }
-      } catch (error) {
-        console.error("Error fetching rework config:", error);
-      }
-    };
-    fetchConfig();
-  }, []);
 
   const logs = order.rework_logs || [];
 
@@ -160,7 +142,7 @@ export default function ReworkSection({ orderId, order, onRefresh, readOnly }: R
                       <Select disabled={readOnly} value={log.issue_type || ""} onValueChange={(val) => updateReworkLog(log.id, "issue_type", val)}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Category" /></SelectTrigger>
                         <SelectContent>
-                          {categories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                          {reworkCategories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </TableCell>
@@ -168,7 +150,7 @@ export default function ReworkSection({ orderId, order, onRefresh, readOnly }: R
                       <Select disabled={readOnly} value={log.responsible_person || ""} onValueChange={(val) => updateReworkLog(log.id, "responsible_person", val)}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Team" /></SelectTrigger>
                         <SelectContent>
-                          {responsibleTeams.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                          {reworkTeams.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </TableCell>

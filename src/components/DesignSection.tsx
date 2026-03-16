@@ -6,14 +6,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
-import StatusDropdown from "./StatusDropdown";
 import OrderActivityLog from "./OrderActivityLog";
 
-export default function DesignSection({ orderId, order, onRefresh, updateOrder, readOnly }: {
+export default function DesignSection({ orderId, order, onRefresh, readOnly }: {
   orderId: string;
   order: any;
   onRefresh: () => void;
-  updateOrder: (field: string, value: any) => void;
   readOnly?: boolean;
 }) {
   const surveyDone = order.survey_done_windows || 0;

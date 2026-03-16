@@ -15,11 +15,10 @@ interface Props {
   orderId: string;
   order: any;
   onRefresh: () => void;
-  updateOrder: (field: string, value: any) => void;
   readOnly?: boolean;
 }
 
-export default function InstallationSection({ orderId, order, onRefresh, updateOrder, readOnly }: Props) {
+export default function InstallationSection({ orderId, order, onRefresh, readOnly }: Props) {
   const [adding, setAdding] = useState(false);
   const [installDate, setInstallDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [windowsCount, setWindowsCount] = useState("");

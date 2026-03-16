@@ -1,7 +1,5 @@
-import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { api } from "@/services/api";
-import { useAuth } from "@/hooks/useAuth";
+import { useState } from "react";
+import { useNotifications } from "@/hooks/useNotifications";
 import { Bell, Check, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,72 +8,10 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useNavigate } from "react-router-dom";
 
-interface AppNotification {
-  id: string;
-  title: string;
-  message: string;
-  type: string;
-  read: boolean;
-  entity_type: string | null;
-  entity_id: string | null;
-  created_at: string;
-}
-
 export default function NotificationBell() {
-  const { user } = useAuth();
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const { notifications, unreadCount, markRead, markAllRead } = useNotifications();
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
-
-  const fetchNotifications = async () => {
-    if (!user) return;
-    try {
-      const data = await api.notifications.list();
-      setNotifications(data.notifications || []);
-    } catch (err) {
-      console.error("Failed to fetch notifications:", err);
-    }
-  };
-
-  useEffect(() => {
-    fetchNotifications();
-
-    // Realtime subscription (Still needed for live updates)
-    const channel = supabase
-      .channel("user-notifications")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "notifications" },
-        (payload: any) => {
-          if (payload.new.user_id === user?.id) {
-            setNotifications((prev) => [payload.new as AppNotification, ...prev]);
-          }
-        }
-      )
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [user]);
-
-  const unreadCount = notifications.filter((n) => !n.read).length;
-
-  const markRead = async (id: string) => {
-    try {
-      await api.notifications.markRead(id);
-      setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
-    } catch (err) {
-      console.error("Failed to mark notification as read:", err);
-    }
-  };
-
-  const markAllRead = async () => {
-    try {
-      await api.notifications.markAllRead();
-      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-    } catch (err) {
-      console.error("Failed to mark all notifications as read:", err);
-    }
-  };
 
   const typeColor = (type: string) => {
     switch (type) {
@@ -113,9 +49,8 @@ export default function NotificationBell() {
             notifications.map((n) => (
               <div
                 key={n.id}
-                className={`flex items-start gap-3 border-b px-3 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors ${
-                  !n.read ? "bg-primary/5" : ""
-                }`}
+                className={`flex items-start gap-3 border-b px-3 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors ${!n.read ? "bg-primary/5" : ""
+                  }`}
                 onClick={() => {
                   markRead(n.id);
                   if (n.entity_type === "orders" && n.entity_id) {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+
 import { api } from "@/services/api";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,14 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
-import StatusDropdown from "./StatusDropdown";
 import OrderActivityLog from "./OrderActivityLog";
 
-export default function SurveySection({ orderId, order, onRefresh, updateOrder, readOnly }: {
+export default function SurveySection({ orderId, order, onRefresh, readOnly }: {
   orderId: string;
   order: any;
   onRefresh: () => void;
-  updateOrder: (field: string, value: any) => void;
   readOnly?: boolean;
 }) {
   const totalWindows = order.total_windows || 0;
@@ -101,13 +99,13 @@ export default function SurveySection({ orderId, order, onRefresh, updateOrder, 
             </div>
             <div className="space-y-1 col-span-2 md:col-span-1">
               <Label className="text-xs text-muted-foreground">Remarks</Label>
-                <Textarea
-                  defaultValue={order.survey_remarks || ""}
-                  readOnly={readOnly}
-                  className={cn("min-h-[60px]", readOnly && "bg-muted")}
-                  onBlur={(e) => updateField("survey_remarks", e.target.value || null)}
-                  placeholder={readOnly ? "" : "Survey notes..."}
-                />
+              <Textarea
+                defaultValue={order.survey_remarks || ""}
+                readOnly={readOnly}
+                className={cn("min-h-[60px]", readOnly && "bg-muted")}
+                onBlur={(e) => updateField("survey_remarks", e.target.value || null)}
+                placeholder={readOnly ? "" : "Survey notes..."}
+              />
             </div>
           </div>
         </CardContent>

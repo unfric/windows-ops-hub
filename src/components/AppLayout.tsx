@@ -5,7 +5,6 @@ import { useUserRoles } from "@/hooks/useUserRoles";
 import { api } from "@/services/api";
 import NotificationBell from "@/components/NotificationBell";
 import {
-  LayoutDashboard,
   Settings,
   LogOut,
   Package,
@@ -18,7 +17,6 @@ import {
   Wrench,
   Warehouse,
   RefreshCw,
-  User,
   Activity,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
