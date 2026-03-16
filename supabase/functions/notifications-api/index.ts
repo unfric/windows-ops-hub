@@ -1,4 +1,4 @@
-import { verifyUser } from "../_shared/auth.ts";
+import { verifyUser, getSupabaseAdmin } from "../_shared/auth.ts";
 import { jsonResponse, errorResponse } from "../_shared/response.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 
@@ -27,6 +27,10 @@ Deno.serve(async (req) => {
         return await handleMarkRead(supabase, id, user.id);
       case "mark-all-read":
         return await handleMarkAllRead(supabase, user.id);
+      case "notify-role":
+        return await handleNotifyRole(req);
+      case "trigger-status-alert":
+        return await handleTriggerStatusAlert(req);
       default:
         return errorResponse(`Action '${action}' not found`, 404);
     }
@@ -69,5 +73,96 @@ async function handleMarkAllRead(supabase: any, userId: string) {
     .eq("read", false);
   
   if (error) return errorResponse(error);
+  return jsonResponse({ success: true });
+}
+
+async function handleNotifyRole(req: Request) {
+  const { role, title, message, type, entityType, entityId } = await req.json();
+  const adminClient = getSupabaseAdmin();
+
+  const { data: roleUsers, error: roleError } = await adminClient
+    .from("user_roles")
+    .select("user_id")
+    .eq("role", role);
+
+  if (roleError) return errorResponse(roleError);
+  if (!roleUsers || roleUsers.length === 0) return jsonResponse({ success: true, message: "No users found for role" });
+
+  const notifications = roleUsers.map((r: any) => ({
+    user_id: r.user_id,
+    title,
+    message,
+    type: type || "info",
+    entity_type: entityType || null,
+    entity_id: entityId || null,
+  }));
+
+  const { error: insertError } = await adminClient.from("notifications").insert(notifications);
+  if (insertError) return errorResponse(insertError);
+
+  return jsonResponse({ success: true });
+}
+
+async function handleTriggerStatusAlert(req: Request) {
+  const { orderId, orderName, field, newValue } = await req.json();
+  const adminClient = getSupabaseAdmin();
+  const notifications: { role: string; title: string; message: string; type: string }[] = [];
+
+  // Logic moved from src/lib/notifications.ts
+  if (field === "finance_status" && newValue === "Pending Approval") {
+    notifications.push({
+      role: "finance",
+      title: "Payment Pending",
+      message: `Order "${orderName}" is waiting for payment approval.`,
+      type: "warning",
+    });
+  }
+
+  if (field === "design_status" && newValue === "Released") {
+    notifications.push({
+      role: "procurement",
+      title: "Materials Needed",
+      message: `Order "${orderName}" design released — materials procurement required.`,
+      type: "warning",
+    });
+  }
+
+  if (field === "dispatch_status" && (newValue === "Not Dispatched" || newValue === "Partially Dispatched")) {
+    notifications.push({
+      role: "dispatch",
+      title: "Ready for Dispatch",
+      message: `Order "${orderName}" is ready for dispatch.`,
+      type: "info",
+    });
+  }
+
+  if (field === "commercial_status" && newValue === "Pipeline") {
+    notifications.push({
+      role: "management",
+      title: "Order Blocked",
+      message: `Order "${orderName}" moved back to Pipeline.`,
+      type: "error",
+    });
+  }
+
+  for (const n of notifications) {
+    const { data: roleUsers } = await adminClient
+      .from("user_roles")
+      .select("user_id")
+      .eq("role", n.role);
+
+    if (roleUsers && roleUsers.length > 0) {
+      const inserts = roleUsers.map((r: any) => ({
+        user_id: r.user_id,
+        title: n.title,
+        message: n.message,
+        type: n.type,
+        entity_type: "orders",
+        entity_id: orderId,
+      }));
+      await adminClient.from("notifications").insert(inserts);
+    }
+  }
+
   return jsonResponse({ success: true });
 }

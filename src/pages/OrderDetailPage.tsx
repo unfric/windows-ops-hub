@@ -9,7 +9,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Check } from "lucide-react";
 import { toast } from "sonner";
-import StatusDropdown from "@/components/StatusDropdown";
 import { STATUS_OPTIONS } from "@/lib/statusConfig";
 import { triggerStatusNotification } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
@@ -24,6 +23,7 @@ import ProcurementSection from "@/components/ProcurementSection";
 import ProductionSection from "@/components/ProductionSection";
 import DispatchSection from "@/components/DispatchSection";
 import OrderActivityLog from "@/components/OrderActivityLog";
+import { usePipelineSteps } from "@/hooks/usePipelineSteps";
 
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -265,65 +265,7 @@ function PipelineStepper({
   activeTab: string,
   onStepClick: (tab: string) => void
 }) {
-  const reworkLogs = order.rework_logs || [];
-  const productionLogs = order.production_logs || [];
-  const dispatchLogs = order.dispatch_logs || [];
-  const installLogs = order.installation_logs || [];
-
-  const packedCount = productionLogs.filter(l => l.stage === "Packed").reduce((s, l) => s + (l.windows_completed || 0), 0);
-  const dispatchedCount = dispatchLogs.reduce((s, l) => s + (l.windows_dispatched || 0), 0);
-  const installedCount = installLogs.reduce((s, l) => s + (l.windows_installed || 0), 0);
-
-  const getShortStatus = (step: any) => {
-    const { label, status, qty, total } = step;
-
-    if (label === "Materials") {
-      const availabilities = [
-        order.hardware_availability,
-        order.extrusion_availability,
-        order.glass_availability,
-        order.coated_extrusion_availability
-      ];
-      if (availabilities.every(v => v === "In Stock / Available" || v === "Not Required")) return "Stock";
-      if (availabilities.some(v => v?.includes("Partial") || v?.includes("In Stock") || v?.includes("Placed") || v?.includes("Sent"))) return "Part Avl";
-      return "Pnd";
-    }
-
-    if (label === "Finance") {
-      const s = status?.toLowerCase() || "";
-      if (s.includes("finance approved")) return "Fin Appr";
-      if (s.includes("deviation approved")) return "Dev Appr";
-      if (s.includes("advance received")) return "Adv Recv";
-      return "Pnd";
-    }
-
-    if (label === "Rework") {
-      if (!reworkLogs || reworkLogs.length === 0) return "NA";
-      const solved = reworkLogs.filter(l => l.status === "Solved" || l.status === "Closed").length;
-      return `${solved}/${reworkLogs.length}`;
-    }
-
-    // Fixed: Ensure ratios are shown even if qty or total is 0, but only if they are numeric
-    if (qty !== undefined && qty !== null && total !== undefined && total !== null) {
-      if (total > 0 && qty >= total) return "Comp";
-      return `${qty}/${total}`;
-    }
-
-    if (!status) return "Pnd";
-    return status.substring(0, 5);
-  };
-
-  const steps = [
-    { label: "Details", tab: "details" },
-    { label: "Survey", tab: "survey", status: order.survey_status, qty: order.survey_done_windows, total: order.total_windows },
-    { label: "Finance", tab: "finance", status: order.finance_status },
-    { label: "Design", tab: "design", status: order.design_status, qty: order.design_released_windows, total: order.survey_done_windows },
-    { label: "Materials", tab: "materials" },
-    { label: "Production", tab: "production", qty: packedCount, total: order.total_windows },
-    { label: "Dispatch", tab: "dispatch", qty: dispatchedCount, total: order.design_released_windows || 0 },
-    { label: "Installation", tab: "installation", qty: installedCount, total: order.total_windows },
-    { label: "Rework", tab: "rework" },
-  ];
+  const { steps } = usePipelineSteps(order);
 
   return (
     <Card className="bg-muted/30">
@@ -331,15 +273,7 @@ function PipelineStepper({
         <div className="flex items-center justify-between min-w-[950px] px-4">
           {steps.map((step, idx) => {
             const isLast = idx === steps.length - 1;
-            const shortStatus = getShortStatus(step);
             const isActive = activeTab === step.tab;
-
-            const isCompleted = shortStatus === "Comp" ||
-              shortStatus === "Fin Appr" ||
-              shortStatus === "Stock" ||
-              (step.label === "Rework" && reworkLogs.length > 0 && shortStatus.split("/")[0] === shortStatus.split("/")[1]);
-
-            const isPending = shortStatus === "Pnd" || shortStatus === "NA";
 
             return (
               <div key={step.label} className="flex-1 flex items-center">
@@ -352,30 +286,30 @@ function PipelineStepper({
                 >
                   <div className={cn(
                     "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-all",
-                    isCompleted ? "bg-green-500 border-green-500 text-white" :
-                      isPending ? "bg-muted border-muted-foreground/30 text-muted-foreground" :
+                    step.isCompleted ? "bg-green-500 border-green-500 text-white" :
+                      step.isPending ? "bg-muted border-muted-foreground/30 text-muted-foreground" :
                         "bg-blue-500 border-blue-500 text-white",
                     isActive && "ring-2 ring-primary ring-offset-2"
                   )}>
-                    {isCompleted ? <Check className="h-4 w-4" /> : idx + 1}
+                    {step.isCompleted ? <Check className="h-4 w-4" /> : idx + 1}
                   </div>
                   <span className={cn(
                     "text-[10px] font-bold uppercase tracking-wider",
                     isActive ? "text-primary" : "text-muted-foreground"
                   )}>{step.label}</span>
-                  {shortStatus && (
+                  {step.shortStatus && (
                     <Badge variant="outline" className={cn(
                       "text-[9px] px-1 py-0 h-4 whitespace-nowrap bg-background",
                       isActive && "border-primary text-primary font-bold"
                     )}>
-                      {shortStatus}
+                      {step.shortStatus}
                     </Badge>
                   )}
                 </button>
                 {!isLast && (
                   <div className={cn(
                     "flex-1 h-0.5 mx-2 transition-all mt-[-20px]",
-                    isCompleted ? "bg-green-500" : "bg-muted-foreground/20"
+                    step.isCompleted ? "bg-green-500" : "bg-muted-foreground/20"
                   )} />
                 )}
               </div>

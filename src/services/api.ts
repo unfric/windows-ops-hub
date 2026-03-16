@@ -287,6 +287,35 @@ export const api = {
       });
       if (error) throw error;
       return data;
+    },
+ 
+    /**
+     * Triggers notifications based on status changes (Server-side logic).
+     */
+    triggerAlert: async (payload: { orderId: string; orderName: string; field: string; newValue: string }) => {
+      const { data, error } = await supabase.functions.invoke('notifications-api', {
+        body: { action: 'trigger-status-alert', ...payload }
+      });
+      if (error) throw error;
+      return data;
+    },
+ 
+    /**
+     * Sends an in-app notification to all users with a specific role.
+     */
+    notifyRole: async (payload: { 
+      role: string; 
+      title: string; 
+      message: string; 
+      type?: string; 
+      entityType?: string; 
+      entityId?: string; 
+    }) => {
+      const { data, error } = await supabase.functions.invoke('notifications-api', {
+        body: { action: 'notify-role', ...payload }
+      });
+      if (error) throw error;
+      return data;
     }
   }
 };

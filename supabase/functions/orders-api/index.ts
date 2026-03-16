@@ -86,9 +86,9 @@ async function handleGet(supabase: any, id: string) {
   const [orderRes, reworkRes, prodRes, dispatchRes, installRes, paymentsRes] = await Promise.all([
     supabase.from("orders").select("*").eq("id", id).maybeSingle(),
     supabase.from("rework_logs").select("*").eq("order_id", id).order("reported_at", { ascending: false }),
-    supabase.from("production_logs").select("*").eq("order_id", id).order("reported_at", { ascending: false }),
-    supabase.from("dispatch_logs").select("*").eq("order_id", id).order("reported_at", { ascending: false }),
-    supabase.from("installation_logs").select("*").eq("order_id", id).order("reported_at", { ascending: false }),
+    supabase.from("production_logs").select("*").eq("order_id", id).order("created_at", { ascending: false }),
+    supabase.from("dispatch_logs").select("*").eq("order_id", id).order("created_at", { ascending: false }),
+    supabase.from("installation_logs").select("*").eq("order_id", id).order("created_at", { ascending: false }),
     supabase.from("payment_logs").select("*").eq("order_id", id).order("payment_date", { ascending: false }),
   ]);
 

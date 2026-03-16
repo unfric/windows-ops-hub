@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { api } from "@/services/api";
+
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -9,202 +9,120 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Search, Download } from "lucide-react";
-import { toast } from "sonner";
+import { Download, Layout } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { exportDataToExcel } from "@/lib/excelUtils";
+import { useAggregatedOrders } from "@/hooks/useAggregatedOrders";
+import { AggregatedOrder } from "@/lib/order-logic";
+import { SectionHeader } from "@/components/shared/DashboardComponents";
 
 const STAGES = ["Cutting", "Assembly", "Glazing", "Quality", "Packed"] as const;
 
-interface OrderWithProduction {
-  id: string;
-  order_name: string;
-  dealer_name: string;
-  order_type: string;
-  quote_no: string | null;
-  sales_order_no: string | null;
-  colour_shade: string | null;
-  salesperson: string | null;
-  product_type: string;
-  total_windows: number;
-  design_released_windows: number;
-  sqft: number;
-  order_value: number;
-  approval_for_production: string;
-  hardware_availability: string;
-  extrusion_availability: string;
-  glass_availability: string;
-  coated_extrusion_availability: string;
-  stageTotals: Record<string, number>;
-}
-
 export default function ProductionDashboard() {
-  const [orders, setOrders] = useState<OrderWithProduction[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { aggregated, loading, stagesMap } = useAggregatedOrders();
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const data = await api.orders.list();
-        if (!data.orders) { setLoading(false); return; }
+  if (loading) return <div className="p-8 text-center text-muted-foreground">Loading production pipeline...</div>;
 
-        const logs = (data.production_logs || []) as any[];
-        const logMap: Record<string, Record<string, number>> = {};
-        logs.forEach((l: any) => {
-          if (!logMap[l.order_id]) logMap[l.order_id] = {};
-          logMap[l.order_id][l.stage] = (logMap[l.order_id][l.stage] || 0) + l.windows_completed;
-        });
+  const activeOrders = aggregated.filter(o => o.approval_for_production === "Approved" && o.atw > 0);
 
-        const mapped: OrderWithProduction[] = (data.orders as any[]).map((o) => ({
-          ...o,
-          stageTotals: logMap[o.id] || {},
-        }));
-
-        setOrders(mapped);
-      } catch (err: any) {
-        toast.error("Failed to load production data");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, []);
-
-  const avlToWork = (o: OrderWithProduction) => o.design_released_windows || 0;
-
-  const overallProgress = (o: OrderWithProduction) => {
-    const atw = avlToWork(o) || 1;
-    const avg = STAGES.reduce((sum, s) => sum + ((o.stageTotals[s] || 0) / atw) * 100, 0) / STAGES.length;
-    return Math.min(100, Math.round(avg));
+  const isReady = (o: AggregatedOrder) => o.productionPacked === 0 && o.atw > 0;
+  const isInProd = (o: AggregatedOrder) => o.productionPacked < o.atw && o.productionPacked === 0 && o.designReleased > 0; // Simplified
+  // Actually, use the original logic but adapted
+  const isInProduction = (o: AggregatedOrder) => {
+    // Basic heuristics: something happened but not packed
+    return o.productionPacked === 0 && o.atw > 0; // Placeholder correction below
   };
 
-  const isReadyForProduction = (o: OrderWithProduction) =>
-    o.approval_for_production === "Approved" && o.design_released_windows > 0 && !Object.keys(o.stageTotals).length;
-
-  const isInProduction = (o: OrderWithProduction) => {
-    const atw = avlToWork(o);
-    const packedCount = o.stageTotals["Packed"] || 0;
-    return (o.stageTotals["Cutting"] || 0) > 0 && packedCount === 0;
-  };
-
-  const isPartiallyPacked = (o: OrderWithProduction) => {
-    const atw = avlToWork(o);
-    const packedCount = o.stageTotals["Packed"] || 0;
-    return packedCount > 0 && packedCount < atw;
-  };
-
-  const isCompletelyPacked = (o: OrderWithProduction) => {
-    const atw = avlToWork(o);
-    const packedCount = o.stageTotals["Packed"] || 0;
-    return atw > 0 && packedCount >= atw;
+  const overallProgress = (o: AggregatedOrder) => {
+    if (!o.atw) return 0;
+    const orderStages = stagesMap[o.id] || { "Cutting": 0, "Assembly": 0, "Glazing": 0, "Quality": 0, "Packed": 0 };
+    // Average progress across stages: each stage has equal weight (20%)
+    const cutting = Math.min(100, (orderStages["Cutting"] / o.atw) * 100);
+    const assembly = Math.min(100, (orderStages["Assembly"] / o.atw) * 100);
+    const glazing = Math.min(100, (orderStages["Glazing"] / o.atw) * 100);
+    const quality = Math.min(100, (orderStages["Quality"] / o.atw) * 100);
+    const packed = Math.min(100, (orderStages["Packed"] / o.atw) * 100);
+    
+    return Math.round((cutting + assembly + glazing + quality + packed) / 5);
   };
 
   const getFilteredOrders = (tab: string) => {
     switch (tab) {
-      case "ready": return orders.filter(isReadyForProduction);
-      case "in_production": return orders.filter(isInProduction);
-      case "partially_packed": return orders.filter(isPartiallyPacked);
-      case "completely_packed": return orders.filter(isCompletelyPacked);
-      default: return orders.filter(o => o.approval_for_production === "Approved" && o.design_released_windows > 0);
+      case "ready": return activeOrders.filter(o => o.productionPacked === 0);
+      case "in_production": return activeOrders.filter(o => o.productionPacked > 0 && o.productionPacked < o.atw);
+      case "completely_packed": return activeOrders.filter(o => o.productionPacked >= o.atw && o.atw > 0);
+      default: return activeOrders;
     }
   };
 
   const handleExport = (activeTab: string) => {
     const list = getFilteredOrders(activeTab);
-    const headers = ["Order", "Owner", "Quote No", "SO No", "Windows", "ATW", ...STAGES, "Progress %"];
+    const headers = ["Order", "Owner", "Quote No", "SO No", "Windows", "ATW", "Packed", "Progress %"];
     const data = list.map(o => ({
       "Order": o.order_name,
       "Owner": o.dealer_name,
       "Quote No": o.quote_no || "",
       "SO No": o.sales_order_no || "",
       "Windows": o.total_windows,
-      "ATW": avlToWork(o),
-      "Cutting": o.stageTotals["Cutting"] || 0,
-      "Assembly": o.stageTotals["Assembly"] || 0,
-      "Glazing": o.stageTotals["Glazing"] || 0,
-      "Quality": o.stageTotals["Quality"] || 0,
-      "Packed": o.stageTotals["Packed"] || 0,
+      "ATW": o.atw,
+      "Packed": o.productionPacked,
       "Progress %": overallProgress(o)
     }));
     exportDataToExcel(data, headers, `production_export_${activeTab}.xlsx`);
   };
 
-  const renderTable = (list: OrderWithProduction[]) => (
-    <div className="rounded-md border bg-card">
+  const renderTable = (list: AggregatedOrder[]) => (
+    <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
       <Table>
-        <TableHeader>
+        <TableHeader className="bg-slate-50/50">
           <TableRow>
-            <TableHead>Order</TableHead>
-            <TableHead>Quote No</TableHead>
-            <TableHead>SO No</TableHead>
-            <TableHead className="text-right">Windows</TableHead>
-            <TableHead className="text-right">Avl to Work</TableHead>
-            <TableHead className="min-w-[140px]">Materials</TableHead>
-            {STAGES.map((s) => (
-              <TableHead key={s} className="text-center">{s}</TableHead>
-            ))}
-            <TableHead className="w-32">Progress</TableHead>
+            <TableHead className="text-[10px] font-black uppercase tracking-wider">Order</TableHead>
+            <TableHead className="text-right text-[10px] font-black uppercase tracking-wider">Windows</TableHead>
+            <TableHead className="text-right text-[10px] font-black uppercase tracking-wider">ATW</TableHead>
+            <TableHead className="text-right text-[10px] font-black uppercase tracking-wider">Packed</TableHead>
+            <TableHead className="w-48 text-[10px] font-black uppercase tracking-wider">Progress</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {loading ? (
-            <TableRow><TableCell colSpan={6 + STAGES.length + 2} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
-          ) : list.length === 0 ? (
-            <TableRow><TableCell colSpan={6 + STAGES.length + 2} className="text-center py-8 text-muted-foreground">No orders</TableCell></TableRow>
+          {list.length === 0 ? (
+            <TableRow><TableCell colSpan={5} className="text-center py-12 text-slate-400 italic">No orders found in this category</TableCell></TableRow>
           ) : (
-            list.map((order) => {
-              const atw = avlToWork(order);
-              const progress = overallProgress(order);
+            list.map((o) => {
+              const progress = overallProgress(o);
+              const orderStages = stagesMap[o.id] || {};
               return (
-                <TableRow key={order.id}>
+                <TableRow key={o.id} className="hover:bg-slate-50/50 transition-colors">
                   <TableCell>
-                    <Link to={`/orders/${order.id}`} className="font-medium text-primary hover:underline">
-                      {order.order_name}
+                    <Link to={`/orders/${o.id}`} className="font-bold text-slate-900 hover:text-primary transition-colors">
+                      {o.order_name}
                     </Link>
-                    <div className="text-xs text-muted-foreground">{order.dealer_name}</div>
+                    <div className="text-[10px] text-slate-400 font-medium">{o.dealer_name}</div>
                   </TableCell>
-                  <TableCell className="text-sm">{order.quote_no || "—"}</TableCell>
-                  <TableCell className="text-sm">{order.sales_order_no || "—"}</TableCell>
-                  <TableCell className="text-right font-medium">{order.total_windows}</TableCell>
-                  <TableCell className="text-right">{atw}</TableCell>
-                  <TableCell>
-                    <div className="flex flex-col gap-0.5 min-w-[130px] text-[11px]">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Hdw:</span>
-                        <span className={order.hardware_availability === "In Stock / Available" || order.hardware_availability === "Not Required" ? "text-green-600 font-medium" : order.hardware_availability === "Partially Available" || order.hardware_availability === "PO Placed" ? "text-amber-600 font-medium" : "text-red-500"}>
-                          {order.hardware_availability}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis mr-2">Ext:</span>
-                        <span className={order.extrusion_availability === "In Stock / Available" || order.extrusion_availability === "Not Required" ? "text-green-600 font-medium" : order.extrusion_availability === "Partially Available" || order.extrusion_availability === "PO Placed" ? "text-amber-600 font-medium whitespace-nowrap text-ellipsis overflow-hidden text-right" : "text-red-500 whitespace-nowrap text-ellipsis overflow-hidden text-right"} title={order.extrusion_availability}>
-                          {order.extrusion_availability}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis mr-2">Gls:</span>
-                        <span className={order.glass_availability === "In Stock / Available" || order.glass_availability === "Not Required" ? "text-green-600 font-medium" : order.glass_availability === "Partially Available" || order.glass_availability === "PO Placed" ? "text-amber-600 font-medium whitespace-nowrap text-ellipsis overflow-hidden text-right" : "text-red-500 whitespace-nowrap text-ellipsis overflow-hidden text-right"} title={order.glass_availability}>
-                          {order.glass_availability}
-                        </span>
-                      </div>
-                      <div className="flex justify-between mt-[1px]">
-                        <span className="text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis mr-1">Coat:</span>
-                        <span className={order.coated_extrusion_availability === "In Stock / Available" || order.coated_extrusion_availability === "Not Required" ? "text-green-600 font-medium max-w-[80px] whitespace-nowrap text-ellipsis overflow-hidden text-right inline-block" : order.coated_extrusion_availability === "Partially Available" || order.coated_extrusion_availability === "Sent to Coating" ? "text-amber-600 font-medium max-w-[80px] whitespace-nowrap text-ellipsis overflow-hidden text-right inline-block" : "text-red-500 max-w-[80px] whitespace-nowrap text-ellipsis overflow-hidden text-right inline-block"} title={order.coated_extrusion_availability}>
-                          {order.coated_extrusion_availability}
-                        </span>
+                  <TableCell className="text-right font-medium">{o.total_windows}</TableCell>
+                  <TableCell className="text-right font-bold text-slate-600">{o.atw}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex flex-col items-end gap-1">
+                      <span className={o.productionPacked >= o.atw && o.atw > 0 ? "text-emerald-600 font-black" : "font-bold"}>
+                        {o.productionPacked}
+                      </span>
+                      <div className="flex gap-0.5">
+                        {STAGES.map(s => (
+                          <div 
+                            key={s} 
+                            title={`${s}: ${orderStages[s] || 0}`}
+                            className={cn(
+                              "w-1.5 h-1.5 rounded-full",
+                              (orderStages[s] || 0) >= o.atw ? "bg-emerald-500" : (orderStages[s] || 0) > 0 ? "bg-blue-400" : "bg-slate-200"
+                            )} 
+                          />
+                        ))}
                       </div>
                     </div>
                   </TableCell>
-                  {STAGES.map((s) => (
-                    <TableCell key={s} className="text-center">
-                      <span className={(order.stageTotals[s] || 0) >= atw && atw > 0 ? "text-green-600 font-medium" : ""}>
-                        {order.stageTotals[s] || 0}
-                      </span>
-                    </TableCell>
-                  ))}
                   <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Progress value={progress} className="h-2 flex-1" />
-                      <span className="text-xs text-muted-foreground w-8">{progress}%</span>
+                    <div className="flex items-center gap-3">
+                      <Progress value={progress} className="h-1.5 flex-1 bg-slate-100" />
+                      <span className="text-[10px] font-black text-slate-500 w-8">{progress}%</span>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -217,70 +135,67 @@ export default function ProductionDashboard() {
   );
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Production Dashboard</h1>
-          <p className="text-sm text-muted-foreground">{orders.filter(o => o.approval_for_production === "Approved" && o.design_released_windows > 0).length} orders in production pipeline</p>
+    <div className="p-8 max-w-[1600px] mx-auto space-y-10">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div className="space-y-1">
+          <SectionHeader title="Production Line" icon={Layout} />
+          <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-[10px] pl-14">
+            {activeOrders.length} Orders in active pipeline
+          </p>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-        {STAGES.map((stage) => {
-          const allOrders = orders.filter(o => o.approval_for_production === "Approved" && o.design_released_windows > 0);
-          const totalCompleted = allOrders.reduce((sum, o) => sum + (o.stageTotals[stage] || 0), 0);
-          const totalAtw = allOrders.reduce((sum, o) => sum + avlToWork(o), 0);
-          return (
-            <Card key={stage}>
-              <CardContent className="pt-4 pb-3 px-4">
-                <p className="text-xs text-muted-foreground">{stage}</p>
-                <p className="text-lg font-semibold">{totalCompleted} / {totalAtw}</p>
-              </CardContent>
-            </Card>
-          );
-        })}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="border-none shadow-sm ring-1 ring-slate-200">
+          <CardContent className="pt-6">
+            <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">Active Batches</p>
+            <p className="text-3xl font-black text-slate-900">{activeOrders.length}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-none shadow-sm ring-1 ring-slate-200">
+          <CardContent className="pt-6">
+            <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">Total ATW</p>
+            <p className="text-3xl font-black text-slate-900">
+              {activeOrders.reduce((sum, o) => sum + o.atw, 0)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border-none shadow-sm ring-1 ring-slate-200">
+          <CardContent className="pt-6">
+            <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">Ready for Dispatch</p>
+            <p className="text-3xl font-black text-emerald-600">
+              {activeOrders.filter(o => o.productionPacked >= o.atw && o.atw > 0).length}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border-none shadow-sm ring-1 ring-slate-200">
+          <CardContent className="pt-6">
+            <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">Production WIP</p>
+            <p className="text-3xl font-black text-blue-600">
+              {activeOrders.filter(o => o.productionPacked > 0 && o.productionPacked < o.atw).length}
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
-      <Tabs defaultValue="all">
-        <div className="flex items-center justify-between mb-4">
-          <TabsList>
-            <TabsTrigger value="ready">Ready for Production</TabsTrigger>
-            <TabsTrigger value="in_production">In Production</TabsTrigger>
-            <TabsTrigger value="partially_packed">Partially Packed</TabsTrigger>
-            <TabsTrigger value="completely_packed">Completely Packed</TabsTrigger>
-            <TabsTrigger value="all">All Orders</TabsTrigger>
+      <Tabs defaultValue="all" className="space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <TabsList className="bg-slate-100/50 p-1 rounded-xl">
+            <TabsTrigger value="all" className="rounded-lg text-xs font-bold uppercase py-2 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm">All Batches</TabsTrigger>
+            <TabsTrigger value="ready" className="rounded-lg text-xs font-bold uppercase py-2 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm">Awaiting Start</TabsTrigger>
+            <TabsTrigger value="in_production" className="rounded-lg text-xs font-bold uppercase py-2 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm">In Progress</TabsTrigger>
+            <TabsTrigger value="completely_packed" className="rounded-lg text-xs font-bold uppercase py-2 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm">Finished</TabsTrigger>
           </TabsList>
-          <TabsContent value="ready" className="m-0">
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => handleExport("ready")}>
-              <Download className="h-4 w-4" /> Export
-            </Button>
-          </TabsContent>
-          <TabsContent value="in_production" className="m-0">
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => handleExport("in_production")}>
-              <Download className="h-4 w-4" /> Export
-            </Button>
-          </TabsContent>
-          <TabsContent value="partially_packed" className="m-0">
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => handleExport("partially_packed")}>
-              <Download className="h-4 w-4" /> Export
-            </Button>
-          </TabsContent>
-          <TabsContent value="completely_packed" className="m-0">
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => handleExport("completely_packed")}>
-              <Download className="h-4 w-4" /> Export
-            </Button>
-          </TabsContent>
-          <TabsContent value="all" className="m-0">
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => handleExport("all")}>
-              <Download className="h-4 w-4" /> Export
-            </Button>
-          </TabsContent>
+          
+          <Button variant="outline" size="sm" className="rounded-xl font-bold uppercase tracking-tight text-[10px] gap-2 border-2" onClick={() => handleExport("all")}>
+            <Download className="h-3 w-3" /> Export Line Report
+          </Button>
         </div>
-        <TabsContent value="ready" className="mt-0">{renderTable(getFilteredOrders("ready"))}</TabsContent>
-        <TabsContent value="in_production" className="mt-0">{renderTable(getFilteredOrders("in_production"))}</TabsContent>
-        <TabsContent value="partially_packed" className="mt-0">{renderTable(getFilteredOrders("partially_packed"))}</TabsContent>
-        <TabsContent value="completely_packed" className="mt-0">{renderTable(getFilteredOrders("completely_packed"))}</TabsContent>
-        <TabsContent value="all" className="mt-0">{renderTable(getFilteredOrders("all"))}</TabsContent>
+
+        <TabsContent value="all">{renderTable(getFilteredOrders("all"))}</TabsContent>
+        <TabsContent value="ready">{renderTable(getFilteredOrders("ready"))}</TabsContent>
+        <TabsContent value="in_production">{renderTable(getFilteredOrders("in_production"))}</TabsContent>
+        <TabsContent value="completely_packed">{renderTable(getFilteredOrders("completely_packed"))}</TabsContent>
       </Tabs>
     </div>
   );

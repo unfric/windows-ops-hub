@@ -51,7 +51,7 @@ async function handleFetch(type: string, filters: any = {}) {
     query = query.limit(filters.limit);
   }
 
-  const { data, error } = await query.order("created_at", { ascending: false });
+  const { data, error } = await query.order("timestamp", { ascending: false });
 
   if (error) return errorResponse(error);
   return jsonResponse(data);

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,168 +19,13 @@ import { importOrdersFromFile, exportOrdersToExcel, downloadImportTemplate } fro
 import CreateOrderDialog from "@/components/CreateOrderDialog";
 import EditOrderDialog from "@/components/EditOrderDialog";
 import { useUserRoles } from "@/hooks/useUserRoles";
-import { api } from "@/services/api";
+import { useAggregatedOrders } from "@/hooks/useAggregatedOrders";
+import { useSettingsOptions } from "@/hooks/useSettingsOptions";
+import { Order, AggregatedOrder } from "@/lib/order-logic";
+import { StatusDot, StatusCell as SharedStatusCell, MaterialsStatusDetail } from "@/components/shared/DashboardComponents";
 
-// ── Types ──
+// ── Specific Cell Wrappers (keeping these local for context-aware styling) ──
 
-interface Order {
-  id: string;
-  order_type: string;
-  quote_no: string | null;
-  sales_order_no: string | null;
-  order_name: string;
-  dealer_name: string;
-  salesperson: string | null;
-  colour_shade: string | null;
-  product_type: string;
-  total_windows: number;
-  windows_released: number;
-  sqft: number;
-  order_value: number;
-  advance_received: number;
-  balance_amount: number;
-  commercial_status: string;
-  dispatch_status: string;
-  installation_status: string;
-  survey_done_windows: number;
-  design_released_windows: number;
-  hardware_availability: string;
-  extrusion_availability: string;
-  glass_availability: string;
-  coated_extrusion_availability: string;
-  hardware_po_status: string;
-  hardware_delivery_date: string | null;
-  extrusion_po_status: string;
-  extrusion_delivery_date: string | null;
-  glass_po_status: string;
-  glass_delivery_date: string | null;
-  coating_status: string;
-  coating_delivery_date: string | null;
-  approval_for_production: string;
-  approval_for_dispatch: string;
-  created_at: string;
-}
-
-interface AggregatedOrder extends Order {
-  receipt: number;
-  balance: number;
-  surveyDone: number;
-  designReleased: number;
-  productionPacked: number;
-  atw: number;
-  dispatchedWindows: number;
-  installedWindows: number;
-  reworkOpenCount: number;
-  reworkTotalCount: number;
-  materialsStatus: "Ready" | "Partial" | "Pending";
-  dispatchLabel: string;
-  nextAction: string;
-}
-
-// ── Status helpers ──
-
-function getMaterialsStatus(o: Order): "Ready" | "Partial" | "Pending" {
-  const items = [o.hardware_availability, o.extrusion_availability, o.glass_availability, o.coated_extrusion_availability];
-  const ready = items.filter((s) => s === "In Stock / Available" || s === "Not Required");
-  if (ready.length === items.length) return "Ready";
-  if (ready.length > 0 || items.some((s) => s === "Partially Available" || s === "PO Placed" || s === "Sent to Coating")) return "Partial";
-  return "Pending";
-}
-
-function getDispatchLabel(dispatched: number, atw: number): string {
-  if (dispatched <= 0) return "Not Dispatched";
-  if (dispatched < atw) return "Partially Dispatched";
-  return "Fully Dispatched";
-}
-
-function getNextAction(agg: AggregatedOrder): string {
-  if (agg.surveyDone < agg.total_windows) return "Survey";
-  if (agg.designReleased < agg.surveyDone) return "Design";
-  if (agg.materialsStatus !== "Ready") return "Procurement";
-  if (agg.productionPacked < agg.atw) return "Production";
-  if (agg.dispatchLabel !== "Fully Dispatched") return "Dispatch";
-  if (agg.installedWindows < agg.dispatchedWindows) return "Installation";
-  if (agg.reworkOpenCount > 0) return "Rework";
-  return "—";
-}
-
-// ── Dot indicator helper ──
-// Returns a colored dot span
-function Dot({ status }: { status: "green" | "amber" | "grey" | "red" }) {
-  const cls =
-    status === "green" ? "bg-emerald-500" :
-      status === "amber" ? "bg-amber-400" :
-        status === "red" ? "bg-red-500" :
-          "bg-slate-300";
-  return <span className={`inline-block w-2 h-2 rounded-full ${cls} mr-1.5 flex-shrink-0`} />;
-}
-
-// Returns a status cell with dot + ratio (e.g. "● 8/20")
-function StatusCell({ done, total, label }: { done: number; total: number; label?: string }) {
-  const status = done <= 0 ? "grey" : done >= total && total > 0 ? "green" : "amber";
-  return (
-    <div className="flex items-center whitespace-nowrap text-sm">
-      <Dot status={status} />
-      <span className={status === "green" ? "text-emerald-700 font-medium" : status === "amber" ? "text-amber-700" : "text-muted-foreground"}>
-        {label ?? `${done}/${total}`}
-      </span>
-    </div>
-  );
-}
-
-// Materials detail showing H, E, G, C indicators with PO status integrated
-function MaterialsStatusDetail({ o }: { o: Order }) {
-  const getDot = (avail: string, po: string, delivery: string | null): string => {
-    // 1. Blue: Delivered
-    if (avail === "Delivered" || po === "Delivered") return "blue";
-
-    // 2. Green: In stock/avl or Not required
-    if (avail === "In Stock / Available" || avail === "Not Required" || po === "Not Required") return "green";
-
-    // 3. Yellow: partially avl
-    if (avail === "Partially Available" || po === "Partially Available") return "yellow";
-
-    // 4. Orange: PO placed or Sent to coating
-    if (avail === "PO Placed" || avail === "Sent to Coating" || po === "PO Placed" || po === "Sent to Coating") return "orange";
-
-    // 5. Red: pending PO or Pending coating
-    if (avail === "Pending PO" || avail === "Pending Coating" || po === "Pending PO" || po === "Pending Coating") return "red";
-
-    return "grey";
-  };
-
-  const items = [
-    { label: "H", avl: o.hardware_availability, po: o.hardware_po_status, date: o.hardware_delivery_date },
-    { label: "E", avl: o.extrusion_availability, po: o.extrusion_po_status, date: o.extrusion_delivery_date },
-    { label: "G", avl: o.glass_availability, po: o.glass_po_status, date: o.glass_delivery_date },
-    { label: "C", avl: o.coated_extrusion_availability, po: o.coating_status, date: o.coating_delivery_date },
-  ];
-
-  return (
-    <div className="flex gap-1" title="H: Hardware, E: Extrusion, G: Glass, C: Coating">
-      {items.map((item, i) => {
-        const dot = getDot(item.avl, item.po, item.date);
-        const tooltip = `${item.label}: ${item.avl || item.po}${item.date ? ` (Del: ${item.date})` : ""}`;
-
-        const colorClass =
-          dot === "blue" ? "bg-blue-500" :
-            dot === "green" ? "bg-emerald-500" :
-              dot === "orange" ? "bg-orange-500" :
-                dot === "red" ? "bg-red-500" :
-                  dot === "yellow" ? "bg-yellow-400" :
-                    "bg-slate-300";
-
-        return (
-          <div key={i} title={tooltip} className={`w-4 h-4 rounded-sm flex items-center justify-center text-[10px] font-bold text-white shadow-sm ${colorClass}`}>
-            {item.label}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// Commercial status cell (formerly Finance status)
 function CommercialStatusCell({ status }: { status: string }) {
   const s = (status || "").toLowerCase();
   const dotStatus: "green" | "amber" | "grey" =
@@ -191,22 +36,18 @@ function CommercialStatusCell({ status }: { status: string }) {
       dotStatus === "amber" ? "text-amber-700" : "text-muted-foreground";
   return (
     <div className="flex items-center whitespace-nowrap text-sm">
-      <Dot status={dotStatus} />
+      <StatusDot status={dotStatus} />
       <span className={cls}>{status || "Draft"}</span>
     </div>
   );
 }
 
-// Approval cell for Production/Dispatch
 function ApprovalCell({ status }: { status: string }) {
   const s = (status || "").toLowerCase();
-  const dotStatus: "green" | "grey" | "amber" =
-    s === "approved" ? "green" :
-      s === "hold" ? "amber" : "grey";
-
+  const dotStatus: "green" | "grey" | "amber" = s === "approved" ? "green" : s === "hold" ? "amber" : "grey";
   return (
     <div className="flex items-center text-xs">
-      <Dot status={dotStatus} />
+      <StatusDot status={dotStatus} />
       <span className={dotStatus === "green" ? "text-emerald-700 font-medium" : s === "hold" ? "text-amber-700" : "text-muted-foreground"}>
         {status || "Pending"}
       </span>
@@ -214,13 +55,12 @@ function ApprovalCell({ status }: { status: string }) {
   );
 }
 
-// Rework dot
 function ReworkDot({ open, total }: { open: number; total: number }) {
   if (total === 0) return <span className="text-muted-foreground text-sm">—</span>;
   const status = open > 0 ? "red" : "green";
   return (
     <div className="flex items-center whitespace-nowrap text-sm">
-      <Dot status={status} />
+      <StatusDot status={status} />
       <span className={open > 0 ? "text-red-600" : "text-emerald-700 font-medium"}>
         {open > 0 ? `${open} Open` : "Closed"}
       </span>
@@ -244,9 +84,9 @@ const emptyFilters: Filters = {
 // ── Component ──
 
 export default function OrdersDashboard() {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [aggregated, setAggregated] = useState<AggregatedOrder[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { orders, aggregated, loading, refresh } = useAggregatedOrders();
+  const { settings, ownerOptions } = useSettingsOptions();
+  
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editOrder, setEditOrder] = useState<Order | null>(null);
@@ -256,105 +96,10 @@ export default function OrdersDashboard() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { hasRole } = useUserRoles();
 
-  const [salespersons, setSalespersons] = useState<string[]>([]);
-  const [owners, setOwners] = useState<string[]>([]);
+  const salespersons = settings?.salespersons?.map((s) => s.name) || [];
+  const owners = [...new Set(orders.map((o) => o.dealer_name).filter(Boolean))].sort();
 
   const canEdit = hasRole("sales") || hasRole("admin") || hasRole("management");
-
-  const fetchAll = async () => {
-    try {
-      const data = await api.orders.list();
-      
-      const rawOrders = (data.orders || []) as unknown as Order[];
-      setOrders(rawOrders);
-
-      // Payment map (confirmed only)
-      const paymentMap: Record<string, number> = {};
-      for (const p of (data.payment_logs || []) as any[]) {
-        if (p.status === "Confirmed") paymentMap[p.order_id] = (paymentMap[p.order_id] || 0) + Number(p.amount);
-      }
-
-      // Production packed map
-      const packedMap: Record<string, number> = {};
-      for (const p of (data.production_logs || []) as any[]) {
-        if (p.stage === "Packed") packedMap[p.order_id] = (packedMap[p.order_id] || 0) + Number(p.windows_completed);
-      }
-
-      // Dispatch map
-      const dispatchMap: Record<string, number> = {};
-      for (const d of (data.dispatch_logs || []) as any[]) {
-        dispatchMap[d.order_id] = (dispatchMap[d.order_id] || 0) + Number(d.windows_dispatched);
-      }
-
-      // Installation map
-      const installMap: Record<string, number> = {};
-      for (const i of (data.installation_logs || []) as any[]) {
-        installMap[i.order_id] = (installMap[i.order_id] || 0) + Number(i.windows_installed);
-      }
-
-      // Rework map
-      const reworkOpenMap: Record<string, number> = {};
-      const reworkTotalMap: Record<string, number> = {};
-      for (const r of (data.rework_logs || []) as any[]) {
-        reworkTotalMap[r.order_id] = (reworkTotalMap[r.order_id] || 0) + 1;
-        if (r.status === "Pending" || r.status === "In Progress") {
-          reworkOpenMap[r.order_id] = (reworkOpenMap[r.order_id] || 0) + 1;
-        }
-      }
-
-      // Aggregate
-      const agg: AggregatedOrder[] = rawOrders.map((o) => {
-        const receipt = paymentMap[o.id] || 0;
-        const packed = packedMap[o.id] || 0;
-        const dispatched = dispatchMap[o.id] || 0;
-        const installed = installMap[o.id] || 0;
-        const openRework = reworkOpenMap[o.id] || 0;
-        const totalRework = reworkTotalMap[o.id] || 0;
-        const atw = o.design_released_windows || 0;
-
-        const partial: AggregatedOrder = {
-          ...o,
-          receipt,
-          balance: Number(o.order_value) - receipt,
-          surveyDone: o.survey_done_windows || 0,
-          designReleased: o.design_released_windows || 0,
-          productionPacked: packed,
-          atw,
-          dispatchedWindows: dispatched,
-          installedWindows: installed,
-          reworkOpenCount: openRework,
-          reworkTotalCount: totalRework,
-          materialsStatus: getMaterialsStatus(o),
-          dispatchLabel: getDispatchLabel(dispatched, atw),
-          nextAction: "",
-        };
-        partial.nextAction = getNextAction(partial);
-        return partial;
-      });
-
-      setAggregated(agg);
-    } catch (err: any) {
-      console.error(err);
-      toast.error("Failed to load orders: " + (err.message || "Unknown error"));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchFilterOptions = async () => {
-    try {
-      const settings = await api.settings.list();
-      if (settings) {
-        setSalespersons(settings.salespersons?.map((s: any) => s.name) || []);
-      }
-      setOwners([...new Set(orders.map((o) => o.dealer_name).filter(Boolean))].sort());
-    } catch (err) {
-      console.error("Error fetching filter options:", err);
-    }
-  };
-
-  useEffect(() => { fetchAll(); }, []);
-  useEffect(() => { if (orders.length > 0) fetchFilterOptions(); }, [orders.length]);
 
   // Tab filtering
   const tabFiltered = aggregated.filter((o) => {
@@ -392,7 +137,7 @@ export default function OrdersDashboard() {
       const result = await importOrdersFromFile(file);
       toast.success(`Import: ${result.created} created, ${result.updated} updated`);
       if (result.errors.length > 0) result.errors.forEach((err) => toast.error(err));
-      fetchAll();
+      refresh();
     } catch (err: any) {
       toast.error("Import failed: " + err.message);
     } finally {
@@ -402,7 +147,6 @@ export default function OrdersDashboard() {
   };
 
   const handleExportFull = async () => {
-    // This uses the updated exportOrdersToExcel that includes all fields
     const paymentMap: Record<string, number> = {};
     aggregated.forEach(a => paymentMap[a.id] = a.receipt);
     await exportOrdersToExcel(orders as any, paymentMap);
@@ -563,19 +307,12 @@ export default function OrdersDashboard() {
                   <TableCell>
                     <ApprovalCell status={o.approval_for_dispatch} />
                   </TableCell>
-                  {/* Survey: done / total_windows */}
-                  <TableCell><StatusCell done={o.surveyDone} total={o.total_windows} /></TableCell>
-                  {/* Design: released / survey_done */}
-                  <TableCell><StatusCell done={o.designReleased} total={o.surveyDone} /></TableCell>
-                  {/* Materials */}
-                  <TableCell><MaterialsStatusDetail o={o} /></TableCell>
-                  {/* Production: packed / atw */}
-                  <TableCell><StatusCell done={o.productionPacked} total={o.atw} /></TableCell>
-                  {/* Dispatch: dispatched / atw */}
-                  <TableCell><StatusCell done={o.dispatchedWindows} total={o.atw} /></TableCell>
-                  {/* Installation: installed / dispatched */}
-                  <TableCell><StatusCell done={o.installedWindows} total={o.dispatchedWindows} /></TableCell>
-                  {/* Rework */}
+                  <TableCell><SharedStatusCell done={o.surveyDone} total={o.total_windows} /></TableCell>
+                  <TableCell><SharedStatusCell done={o.designReleased} total={o.surveyDone} /></TableCell>
+                  <TableCell><MaterialsStatusDetail order={o} /></TableCell>
+                  <TableCell><SharedStatusCell done={o.productionPacked} total={o.atw} /></TableCell>
+                  <TableCell><SharedStatusCell done={o.dispatchedWindows} total={o.atw} /></TableCell>
+                  <TableCell><SharedStatusCell done={o.installedWindows} total={o.dispatchedWindows} /></TableCell>
                   <TableCell><ReworkDot open={o.reworkOpenCount} total={o.reworkTotalCount} /></TableCell>
                   <TableCell>
                     <Badge variant="outline" className={o.nextAction === "—" ? "bg-muted text-muted-foreground" : "bg-amber-500/15 text-amber-700 border-amber-500/20"}>
@@ -596,8 +333,8 @@ export default function OrdersDashboard() {
         </Table>
       </div>
 
-      <CreateOrderDialog open={dialogOpen} onOpenChange={setDialogOpen} onCreated={fetchAll} />
-      <EditOrderDialog open={!!editOrder} onOpenChange={(v) => { if (!v) setEditOrder(null); }} onUpdated={fetchAll} order={editOrder} />
+      <CreateOrderDialog open={dialogOpen} onOpenChange={setDialogOpen} onCreated={refresh} />
+      <EditOrderDialog open={!!editOrder} onOpenChange={(v) => { if (!v) setEditOrder(null); }} onUpdated={refresh} order={editOrder} />
     </div>
   );
 }
