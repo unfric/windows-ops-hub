@@ -17,6 +17,8 @@ import {
 import { Search, Filter, X, Download } from "lucide-react";
 import { toast } from "sonner";
 import { exportDataToExcel } from "@/lib/excelUtils";
+import DataTableLayout from "@/components/ui/data-table-layout";
+import { cn } from "@/lib/utils";
 
 interface Order {
   id: string;
@@ -30,6 +32,11 @@ interface Order {
   dispatch_status: string;
   commercial_status: string;
   design_released_windows: number;
+  total_windows: number;
+  order_date: string | null;
+  tat_date: string | null;
+  target_delivery_date: string | null;
+  dispatch_date: string | null;
 }
 
 interface PaymentLog {
@@ -156,14 +163,33 @@ export default function FinancePage() {
     return true;
   });
 
-  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+  const activeFilters = Object.entries(filters)
+    .filter(([_, v]) => v)
+    .map(([k, v]) => ({
+      key: k,
+      label: k === "orderOwner" ? "Owner" : 
+             k === "approvalProduction" ? "Prod Appr" : 
+             k === "approvalDispatch" ? "Disp Appr" :
+             k.charAt(0).toUpperCase() + k.slice(1),
+      value: v
+    }));
+
+  const activeFilterCount = activeFilters.length;
 
   const handleExport = () => {
-    const headers = ["Order", "Owner", "Salesperson", "Order Value", "Receipt", "Balance", "Prod Appr", "Disp Appr", "Dispatch Status", "Comm Status"];
+    const headers = [
+      "Order", "Owner", "Salesperson",
+      "Order Date", "TAT Date", "Target Delv", "Disp Date",
+      "Order Value", "Receipt", "Balance", "Prod Appr", "Disp Appr", "Dispatch Status", "Comm Status"
+    ];
     const data = filtered.map(o => ({
       "Order": o.order_name,
       "Owner": o.dealer_name,
       "Salesperson": o.salesperson || "",
+      "Order Date": o.order_date || "",
+      "TAT Date": o.tat_date || "",
+      "Target Delv": o.target_delivery_date || "",
+      "Disp Date": o.dispatch_date || "",
       "Order Value": o.order_value,
       "Receipt": paymentMap[o.id] || 0,
       "Balance": (o.order_value || 0) - (paymentMap[o.id] || 0),
@@ -175,127 +201,161 @@ export default function FinancePage() {
     exportDataToExcel(data, headers, `finance_export_${tab}.xlsx`);
   };
 
+  const columns = [
+    {
+      header: "Project Name",
+      accessor: (o: Order) => (
+        <div className="flex flex-col">
+          <Link to={`/orders/${o.id}`} className="font-medium text-blue-600 hover:underline">{o.order_name}</Link>
+          <span className="text-[10px] text-muted-foreground uppercase">{o.commercial_status}</span>
+        </div>
+      ),
+      className: "min-w-[180px]"
+    },
+    {
+      header: "Order Date",
+      accessor: (o: Order) => o.order_date ? new Date(o.order_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: Order) => o.order_date,
+      className: "whitespace-nowrap",
+    },
+    {
+      header: "TAT Date",
+      accessor: (o: Order) => o.tat_date ? new Date(o.tat_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: Order) => o.tat_date,
+      className: "whitespace-nowrap text-blue-600 font-medium",
+    },
+    {
+      header: "Target Delv",
+      accessor: (o: Order) => o.target_delivery_date ? new Date(o.target_delivery_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: Order) => o.target_delivery_date,
+      className: "whitespace-nowrap",
+    },
+    {
+      header: "Dispatch Date",
+      accessor: (o: Order) => o.dispatch_date ? new Date(o.dispatch_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: Order) => o.dispatch_date,
+      className: "whitespace-nowrap text-emerald-600 font-medium",
+    },
+    {
+      header: "Default Quote",
+      accessor: (o: Order) => o.quote_no || "—",
+      className: "text-[#5c6e82]"
+    },
+    {
+      header: "Managed By",
+      accessor: (o: Order) => <span className="text-[#5c6e82]">{o.dealer_name}</span>,
+    },
+    {
+      header: "Salesperson",
+      accessor: (o: Order) => <span className="text-[#5c6e82]">{o.salesperson || "—"}</span>,
+    },
+    {
+      header: "Qty",
+      accessor: (o: Order) => <span className="text-[#5c6e82] whitespace-nowrap">{o.design_released_windows || 0} / {o.total_windows}</span>,
+      className: "whitespace-nowrap",
+    },
+    {
+      header: "Opportunity Value",
+      accessor: (o: Order) => <span className="text-[#5c6e82]">₹{Number(o.order_value).toLocaleString()}</span>,
+    },
+    {
+      header: "Receipt",
+      accessor: (o: Order) => <span className="text-[#5c6e82]">₹{Number(paymentMap[o.id] || 0).toLocaleString()}</span>,
+    },
+    {
+      header: "Balance",
+      accessor: (o: Order) => {
+        const balance = Number(o.order_value) - (paymentMap[o.id] || 0);
+        return <span className={balance > 0 ? "text-amber-600 font-medium" : "text-emerald-600 font-medium"}>₹{balance.toLocaleString()}</span>;
+      },
+    },
+    {
+      header: "Prod. Appr",
+      accessor: (o: Order) => (
+        <Badge variant="outline" className={cn("text-[10px] uppercase font-semibold", approvalColor(o.approval_for_production))}>
+          {o.approval_for_production}
+        </Badge>
+      ),
+    },
+    {
+      header: "Disp. Appr",
+      accessor: (o: Order) => (
+        <Badge variant="outline" className={cn("text-[10px] uppercase font-semibold", approvalColor(o.approval_for_dispatch))}>
+          {o.approval_for_dispatch}
+        </Badge>
+      ),
+    },
+    {
+      header: "Dispatch Status",
+      accessor: (o: Order) => {
+        const dScore = dispatchStatusMap[o.id];
+        return (
+          <Badge variant="outline" className={cn("text-[10px] uppercase font-semibold", 
+            dScore === "Fully Dispatched" ? "bg-success/15 text-success border-success/20" : dScore === "Partially Dispatched" ? "bg-warning/15 text-warning border-warning/20" : "bg-muted text-muted-foreground")}>
+            {dScore || "Not Dispatched"}
+          </Badge>
+        );
+      },
+    }
+  ];
+
+  const tabsConfig = [
+    { id: "pending", label: "Pending for Approval" },
+    { id: "production", label: "Approved Production" },
+    { id: "dispatch", label: "Approved Dispatch" },
+    { id: "all", label: "All Orders" },
+  ];
+
+
   return (
-    <div className="p-6">
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Finance</h1>
-          <p className="text-sm text-muted-foreground">{orders.length} total orders</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={handleExport}>
-            <Download className="h-4 w-4" /> Export
-          </Button>
-        </div>
-      </div>
-
-      <div className="mb-4 flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search by name, owner, quotation..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button size="sm" variant="outline" className="gap-1.5">
-              <Filter className="h-4 w-4" />
-              Filters
-              {activeFilterCount > 0 && (
-                <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs rounded-full">
-                  {activeFilterCount}
-                </Badge>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-72 space-y-3" align="start">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Filters</span>
-              {activeFilterCount > 0 && (
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setFilters(emptyFilters)}>
-                  <X className="h-3 w-3 mr-1" /> Clear
-                </Button>
-              )}
+    <div className="flex-1 w-full bg-white flex flex-col h-[calc(100vh-64px)]">
+      <DataTableLayout
+        moduleName="finance"
+        title="Finance"
+        tabs={tabsConfig}
+        activeTab={tab}
+        onTabChange={setTab}
+        searchValue={search}
+        onSearch={setSearch}
+        activeFilterCount={activeFilterCount}
+        activeFilters={activeFilters}
+        onRemoveFilter={(key) => setFilters(prev => ({ ...prev, [key]: "" }))}
+        onClearFilters={() => setFilters(emptyFilters)}
+        columns={columns}
+        data={filtered}
+        getRowId={(o) => o.id}
+        onExport={handleExport}
+        filterChildren={
+          <div className="space-y-4">
+            <FilterSelect label="Salesperson" value={filters.salesperson} options={salespersons} onChange={(v) => setFilters(p => ({ ...p, salesperson: v }))} />
+            <FilterSelect label="Order Owner" value={filters.orderOwner} options={owners} onChange={(v) => setFilters(p => ({ ...p, orderOwner: v }))} />
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground uppercase font-semibold">Prod. Approval</label>
+              <Select value={filters.approvalProduction || "all"} onValueChange={(v) => setFilters(p => ({ ...p, approvalProduction: v === "all" ? "" : v }))}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="Approved">Approved</SelectItem>
+                  <SelectItem value="Hold">Hold</SelectItem>
+                  <SelectItem value="Pending">Pending</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <FilterSelect label="Salesperson" value={filters.salesperson} options={salespersons} onChange={(v) => setFilters({ ...filters, salesperson: v })} />
-            <FilterSelect label="Order Owner" value={filters.orderOwner} options={owners} onChange={(v) => setFilters({ ...filters, orderOwner: v })} />
-            <FilterSelect label="Approval (Production)" value={filters.approvalProduction} options={["Pending", "Approved", "Hold"]} onChange={(v) => setFilters({ ...filters, approvalProduction: v })} />
-            <FilterSelect label="Approval (Dispatch)" value={filters.approvalDispatch} options={["Pending", "Approved", "Hold"]} onChange={(v) => setFilters({ ...filters, approvalDispatch: v })} />
-          </PopoverContent>
-        </Popover>
-      </div>
-
-      <Tabs value={tab} onValueChange={setTab} className="mb-4">
-        <TabsList>
-          <TabsTrigger value="pending">Pending for Approval</TabsTrigger>
-          <TabsTrigger value="production">Approved Production</TabsTrigger>
-          <TabsTrigger value="dispatch">Approved Dispatch</TabsTrigger>
-          <TabsTrigger value="all">All Orders</TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      <div className="rounded-md border bg-card overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="min-w-[140px]">Order Name</TableHead>
-              <TableHead className="min-w-[100px]">Quotation No</TableHead>
-              <TableHead className="min-w-[120px]">Owner</TableHead>
-              <TableHead className="min-w-[100px]">Salesperson</TableHead>
-              <TableHead className="text-right min-w-[90px]">Order Value</TableHead>
-              <TableHead className="text-right min-w-[80px]">Receipt</TableHead>
-              <TableHead className="text-right min-w-[80px]">Balance</TableHead>
-              <TableHead className="min-w-[120px]">Prod. Approval</TableHead>
-              <TableHead className="min-w-[120px]">Disp. Approval</TableHead>
-              <TableHead className="min-w-[120px]">Dispatch Status</TableHead>
-              <TableHead className="min-w-[120px]">Commercial Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">Loading...</TableCell>
-              </TableRow>
-            ) : filtered.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">No orders found</TableCell>
-              </TableRow>
-            ) : (
-              filtered.map((order) => {
-                const receipt = paymentMap[order.id] || 0;
-                const balance = Number(order.order_value) - receipt;
-                return (
-                  <TableRow key={order.id} className="hover:bg-muted/50">
-                    <TableCell>
-                      <Link to={`/orders/${order.id}`} className="font-medium text-primary hover:underline">{order.order_name}</Link>
-                    </TableCell>
-                    <TableCell className="text-sm">{order.quote_no || "—"}</TableCell>
-                    <TableCell className="text-sm">{order.dealer_name}</TableCell>
-                    <TableCell className="text-sm">{order.salesperson || "—"}</TableCell>
-                    <TableCell className="text-right font-medium">₹{Number(order.order_value).toLocaleString()}</TableCell>
-                    <TableCell className="text-right">₹{receipt.toLocaleString()}</TableCell>
-                    <TableCell className="text-right">₹{balance.toLocaleString()}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={approvalColor(order.approval_for_production)}>
-                        {order.approval_for_production}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={approvalColor(order.approval_for_dispatch)}>
-                        {order.approval_for_dispatch}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      <Badge variant="outline" className={dispatchStatusMap[order.id] === "Fully Dispatched" ? "bg-success/15 text-success border-success/20" : dispatchStatusMap[order.id] === "Partially Dispatched" ? "bg-warning/15 text-warning border-warning/20" : "bg-muted text-muted-foreground"}>
-                        {dispatchStatusMap[order.id] || "Not Dispatched"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm">{order.commercial_status}</TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground uppercase font-semibold">Disp. Approval</label>
+              <Select value={filters.approvalDispatch || "all"} onValueChange={(v) => setFilters(p => ({ ...p, approvalDispatch: v === "all" ? "" : v }))}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="Approved">Approved</SelectItem>
+                  <SelectItem value="Hold">Hold</SelectItem>
+                  <SelectItem value="Pending">Pending</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        }
+      />
     </div>
   );
 }

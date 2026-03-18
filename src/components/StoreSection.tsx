@@ -66,7 +66,11 @@ export default function StoreSection({ orderId, order, onRefresh, readOnly }: St
             return (
               <div key={f.field} className="space-y-1">
                 <Label className="text-xs text-muted-foreground">{f.label}</Label>
-                <Select disabled={readOnly} value={order[f.field] || "No"} onValueChange={(v) => updateField(f.field, v)}>
+              <Select
+                  disabled={readOnly}
+                  value={order[f.field] || (f.field === "coated_extrusion_availability" ? "Pending Coating" : "Pending PO")}
+                  onValueChange={(v) => updateField(f.field, v)}
+                >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {(f.field === "coated_extrusion_availability" ? COATING_VALUES : AVAILABILITY_VALUES).map((s) => {

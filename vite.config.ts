@@ -20,7 +20,6 @@ export default defineConfig(({ mode }) => ({
       output: {
         manualChunks: {
           "vendor-excel": ["xlsx"],
-          "vendor-charts": ["recharts"],
           "vendor-icons": ["lucide-react"],
           "vendor-db": ["@supabase/supabase-js"],
           "vendor-query": ["@tanstack/react-query"],

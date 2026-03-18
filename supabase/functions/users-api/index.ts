@@ -5,7 +5,8 @@ import { corsHeaders } from "../_shared/cors.ts";
 /**
  * Handles user-related operations and metadata.
  */
-Deno.serve(async (req) => {
+// @ts-ignore
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -30,6 +31,8 @@ Deno.serve(async (req) => {
         return await handleInvite(req, payload.data, user.id);
       case "resend-invite":
         return await handleResendInvite(req, payload.id, user.id);
+      case "get-module-users":
+        return await handleGetModuleUsers(payload.module);
       case "update":
         return await handleUpdate(payload.id, payload.data);
       case "delete":
@@ -213,4 +216,50 @@ async function handleResendInvite(req: Request, userId: string, requestorId: str
 
   if (inviteError) return errorResponse(inviteError);
   return jsonResponse({ success: true, message: "Invitation resent" });
+}
+
+async function handleGetModuleUsers(moduleName: string) {
+  const adminClient = getSupabaseAdmin();
+  if (!moduleName) return errorResponse("Module is required");
+
+  // Modern tracking system: Get users who have either the specific module role, 
+  // or are high-level admins/management who supervise all modules.
+  const searchRoles = [
+    moduleName.toLowerCase(), 
+    moduleName.charAt(0).toUpperCase() + moduleName.slice(1).toLowerCase(),
+    "admin", 
+    "management"
+  ];
+
+  const { data: rolesData, error: rolesError } = await adminClient
+    .from("user_roles")
+    .select("user_id, role")
+    .in("role", searchRoles);
+  
+  if (rolesError) {
+    console.error("Error fetching roles for module users:", rolesError);
+    return errorResponse(rolesError);
+  }
+  
+  const userIds = [...new Set(rolesData?.map((r: any) => r.user_id) || [])];
+  if (userIds.length === 0) {
+    console.log(`No users found for module: ${moduleName}`);
+    return jsonResponse([]);
+  }
+
+  // Fetch profiles for these users
+  const { data: profiles, error: pError } = await adminClient
+    .from("profiles")
+    .select("name, email, avatar_url")
+    .in("user_id", userIds)
+    .eq("active", true)
+    .limit(5);
+
+  if (pError) {
+    console.error("Error fetching profiles for module users:", pError);
+    return errorResponse(pError);
+  }
+
+  // Ensure we return name and initials-friendly format
+  return jsonResponse(profiles || []);
 }

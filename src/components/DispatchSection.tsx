@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/table";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { Trash2 } from "lucide-react";
 import OrderActivityLog from "./OrderActivityLog";
 import { cn } from "@/lib/utils";
 
@@ -60,6 +61,17 @@ export default function DispatchSection({ orderId, order, onRefresh, updateOrder
       setTransporter("");
       setVehicleDetails("");
       setRemarks("");
+      onRefresh();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
+  };
+
+  const handleDeleteDispatch = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this dispatch entry?")) return;
+    try {
+      await api.orders.deleteLog("dispatch_logs", id);
+      toast.success("Entry deleted");
       onRefresh();
     } catch (error: any) {
       toast.error(error.message);
@@ -154,6 +166,7 @@ export default function DispatchSection({ orderId, order, onRefresh, updateOrder
                   <TableHead>Transporter</TableHead>
                   <TableHead>Vehicle</TableHead>
                   <TableHead>Remarks</TableHead>
+                  {!readOnly && <TableHead className="w-10"></TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -164,6 +177,18 @@ export default function DispatchSection({ orderId, order, onRefresh, updateOrder
                     <TableCell className="text-sm">{d.transporter || "—"}</TableCell>
                     <TableCell className="text-sm">{d.vehicle_details || "—"}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{d.remarks || "—"}</TableCell>
+                    {!readOnly && (
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive"
+                          onClick={() => handleDeleteDispatch(d.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>

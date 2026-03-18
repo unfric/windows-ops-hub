@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/table";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { Trash2 } from "lucide-react";
 import OrderActivityLog from "./OrderActivityLog";
 
 const STAGES = ["Cutting", "Assembly", "Glazing", "Quality", "Packed"] as const;
@@ -78,6 +79,17 @@ export default function ProductionSection({ orderId, order, onRefresh, readOnly 
       setAddingStage(null);
       setEntryWindows("");
       setEntryRemarks("");
+      onRefresh();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
+  };
+
+  const handleDeleteEntry = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this production entry?")) return;
+    try {
+      await api.orders.deleteLog("production_logs", id);
+      toast.success("Entry deleted");
       onRefresh();
     } catch (error: any) {
       toast.error(error.message);
@@ -162,6 +174,7 @@ export default function ProductionSection({ orderId, order, onRefresh, readOnly 
                   <TableHead>Stage</TableHead>
                   <TableHead className="text-right">Windows</TableHead>
                   <TableHead>Remarks</TableHead>
+                  {!readOnly && <TableHead className="w-10"></TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -171,6 +184,18 @@ export default function ProductionSection({ orderId, order, onRefresh, readOnly 
                     <TableCell><Badge variant="outline">{l.stage}</Badge></TableCell>
                     <TableCell className="text-right font-medium">{l.windows_completed}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{l.remarks || "—"}</TableCell>
+                    {!readOnly && (
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive"
+                          onClick={() => handleDeleteEntry(l.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>

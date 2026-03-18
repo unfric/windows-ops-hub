@@ -35,7 +35,11 @@ export default function EditOrderDialog({ open, onOpenChange, onUpdated, order }
   const [advanceReceived, setAdvanceReceived] = useState(false);
   const [advanceAmount, setAdvanceAmount] = useState("");
   const [commercialStatus, setCommercialStatus] = useState("");
+  const [orderDate, setOrderDate] = useState("");
+  const [tatDate, setTatDate] = useState("");
+  const [targetDeliveryDate, setTargetDeliveryDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [tatConfig, setTatConfig] = useState<any[]>([]);
   const [deleting, setDeleting] = useState(false);
 
   const [projectNames, setProjectNames] = useState<SettingsItem[]>([]);
@@ -62,6 +66,9 @@ export default function EditOrderDialog({ open, onOpenChange, onUpdated, order }
     setAdvanceReceived(adv > 0);
     setAdvanceAmount(adv > 0 ? String(adv) : "");
     setCommercialStatus(order.commercial_status || "");
+    setOrderDate(order.order_date ? new Date(order.order_date).toISOString().split('T')[0] : "");
+    setTatDate(order.tat_date ? new Date(order.tat_date).toISOString().split('T')[0] : "");
+    setTargetDeliveryDate(order.target_delivery_date ? new Date(order.target_delivery_date).toISOString().split('T')[0] : "");
 
     const fetchAll = async () => {
       try {
@@ -74,6 +81,7 @@ export default function EditOrderDialog({ open, onOpenChange, onUpdated, order }
           setSalespersons(settings.salespersons || []);
           setProducts(settings.other_product_types || []);
           setCommercialStatuses(settings.commercial_statuses || []);
+          setTatConfig(settings.tat_config || []);
         }
       } catch (err) {
         console.error("Error fetching settings:", err);
@@ -81,6 +89,10 @@ export default function EditOrderDialog({ open, onOpenChange, onUpdated, order }
     };
     fetchAll();
   }, [open, order]);
+
+  useEffect(() => {
+    // No TAT auto-calculation in edit modal — managed from Order Details tab
+  }, []);
 
   const ownerOptions = [
     ...dealers.map((d) => ({ label: `${d.name} (Dealer)`, value: d.name })),
@@ -108,6 +120,9 @@ export default function EditOrderDialog({ open, onOpenChange, onUpdated, order }
         order_value: Number(orderValue) || 0,
         advance_received: advanceReceived ? Number(advanceAmount) || 0 : 0,
         commercial_status: commercialStatus || "Pipeline",
+        order_date: orderDate || null,
+        tat_date: tatDate || null,
+        target_delivery_date: targetDeliveryDate || null,
       };
 
       await api.orders.update(order.id, payload);
@@ -158,6 +173,11 @@ export default function EditOrderDialog({ open, onOpenChange, onUpdated, order }
                     <span className="text-sm">Project</span>
                   </label>
                 </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Order Date</Label>
+                <Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
               </div>
 
               <div className="space-y-1.5">
@@ -218,6 +238,7 @@ export default function EditOrderDialog({ open, onOpenChange, onUpdated, order }
                   </SelectContent>
                 </Select>
               </div>
+
             </div>
 
             <div className="space-y-4">

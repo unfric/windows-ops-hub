@@ -9,7 +9,7 @@ import AppLayout from "@/components/AppLayout";
 import ThemeSync from "@/components/ThemeSync";
 
 const LoginPage = lazy(() => import("@/pages/LoginPage"));
-const OperationalDashboard = lazy(() => import("@/pages/OperationalDashboard"));
+const OperationalDashboard = lazy(() => import("@/pages/OperationalDashboardV2"));
 const OrdersDashboard = lazy(() => import("@/pages/OrdersDashboard"));
 const OrderDetailPage = lazy(() => import("@/pages/OrderDetailPage"));
 const ProductionDashboard = lazy(() => import("@/pages/ProductionDashboard"));

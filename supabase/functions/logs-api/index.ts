@@ -35,7 +35,7 @@ async function handleFetch(type: string, filters: any = {}) {
 
   const adminClient = getSupabaseAdmin();
   const table = type === "audit" ? "audit_log" : "order_activity_log";
-  
+
   let query = adminClient.from(table).select("*");
 
   if (filters.order_id) {
@@ -51,7 +51,7 @@ async function handleFetch(type: string, filters: any = {}) {
     query = query.limit(filters.limit);
   }
 
-  const { data, error } = await query.order("created_at", { ascending: false });
+  const { data, error } = await query.order("timestamp", { ascending: false });
 
   if (error) return errorResponse(error);
   return jsonResponse(data);

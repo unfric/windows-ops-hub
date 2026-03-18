@@ -5,7 +5,21 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Users, Building, Briefcase, Paintbrush, Package, Truck } from "lucide-react";
+import { Users, Building, Briefcase, Package, Truck, Calendar, Trash2, Plus } from "lucide-react";
+import { useEffect, useState } from "react";
+import { api } from "@/services/api";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function MastersSettingsPage() {
   return (
@@ -63,7 +77,10 @@ export default function MastersSettingsPage() {
             <ConfigList table="coating_vendors" title="Coating Vendors" />
           </AccordionContent>
         </AccordionItem>
+
+
       </Accordion>
     </div>
   );
 }
+
