@@ -1,23 +1,11 @@
 import { useEffect, useState } from "react";
 import { api } from "@/services/api";
-import { supabase } from "@/integrations/supabase/client";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 import { toast } from "sonner";
-
-interface SettingsItem {
-  id: string;
-  name: string;
-  active: boolean;
-}
+import { OrderFormFields, SettingsItem } from "./orders/OrderFormFields";
 
 interface CreateOrderDialogProps {
   open: boolean;
@@ -45,7 +33,6 @@ export default function CreateOrderDialog({ open, onOpenChange, onCreated }: Cre
   
   const [tatDate, setTatDate] = useState("");
   const [targetDeliveryDate, setTargetDeliveryDate] = useState("");
-  const [tatConfig, setTatConfig] = useState<any[]>([]);
 
   // Settings data
   const [projectNames, setProjectNames] = useState<SettingsItem[]>([]);
@@ -144,7 +131,7 @@ export default function CreateOrderDialog({ open, onOpenChange, onCreated }: Cre
         order_date: orderDate || new Date().toISOString().split('T')[0],
         tat_date: tatDate || null,
         target_delivery_date: targetDeliveryDate || null,
-        // Default material statuses — store will show real actionable status, not blank
+        // Default material statuses
         hardware_availability: "Pending PO",
         extrusion_availability: "Pending PO",
         glass_availability: "Pending PO",
@@ -178,160 +165,29 @@ export default function CreateOrderDialog({ open, onOpenChange, onCreated }: Cre
           <DialogTitle>Create Order</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-            {/* LEFT COLUMN */}
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Order Type</Label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <Checkbox checked={orderType === "Retail"} onCheckedChange={() => { setOrderType("Retail"); setOrderName(""); setLotName(""); }} />
-                    <span className="text-sm">Retail</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <Checkbox checked={orderType === "Project"} onCheckedChange={() => { setOrderType("Project"); setOrderName(""); setLotName(""); }} />
-                    <span className="text-sm">Project</span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium">Order Date</Label>
-                <Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} required />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm">{orderType === "Project" ? "Project Name *" : "Order Name *"}</Label>
-                {orderType === "Retail" ? (
-                  <Input value={orderName} onChange={(e) => setOrderName(e.target.value)} placeholder="Enter order name" required />
-                ) : (
-                  <Select value={orderName} onValueChange={setOrderName}>
-                    <SelectTrigger><SelectValue placeholder="Select project" /></SelectTrigger>
-                    <SelectContent>
-                      {projectNames.map((p) => (
-                        <SelectItem key={p.id} value={p.name}>{p.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-
-              {orderType === "Project" && (
-                <div className="space-y-1.5">
-                  <Label className="text-sm">Lot Name *</Label>
-                  <Input value={lotName} onChange={(e) => setLotName(e.target.value)} placeholder="e.g. Tower A - Phase 1" required />
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <Label className="text-sm">Order Owner</Label>
-                <Select value={orderOwner} onValueChange={setOrderOwner}>
-                  <SelectTrigger><SelectValue placeholder="Select owner" /></SelectTrigger>
-                  <SelectContent>
-                    {ownerOptions.map((o) => (
-                      <SelectItem key={o.value + o.label} value={o.value}>{o.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm">Quotation No</Label>
-                <Input value={quoteNo} onChange={(e) => setQuoteNo(e.target.value)} placeholder="Quotation number" />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm">Colour Shade</Label>
-                <Select value={colourShade} onValueChange={setColourShade}>
-                  <SelectTrigger><SelectValue placeholder="Select shade" /></SelectTrigger>
-                  <SelectContent>
-                    {colourShades.map((c) => (
-                      <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm">Salesperson</Label>
-                <Select value={salesperson} onValueChange={setSalesperson}>
-                  <SelectTrigger><SelectValue placeholder="Select salesperson" /></SelectTrigger>
-                  <SelectContent>
-                    {salespersons.map((s) => (
-                      <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm">Commercial Status</Label>
-                <Select value={commercialStatus} onValueChange={setCommercialStatus}>
-                  <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
-                  <SelectContent>
-                    {commercialStatuses.map((s) => (
-                      <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-
-            </div>
-
-            {/* RIGHT COLUMN */}
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Products *</Label>
-                <div className="flex flex-wrap gap-3">
-                  {products.map((p) => (
-                    <label key={p.id} className="flex items-center gap-2 cursor-pointer">
-                      <Checkbox
-                        checked={selectedProducts.includes(p.name)}
-                        onCheckedChange={(checked) => {
-                          setSelectedProducts((prev) =>
-                            checked ? [...prev, p.name] : prev.filter((n) => n !== p.name)
-                          );
-                        }}
-                      />
-                      <span className="text-sm">{p.name}</span>
-                    </label>
-                  ))}
-                  {products.length === 0 && (
-                    <span className="text-sm text-muted-foreground">No products configured in Settings</span>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm">Qty (No of Windows)</Label>
-                <Input type="number" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="0" min="0" />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm">Sqft</Label>
-                <Input type="number" step="0.01" value={sqft} onChange={(e) => setSqft(e.target.value)} placeholder="0" />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm">Order Value (₹)</Label>
-                <Input type="number" step="0.01" value={orderValue} onChange={(e) => setOrderValue(e.target.value)} placeholder="0" />
-              </div>
-
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox checked={advanceReceived} onCheckedChange={(v) => { setAdvanceReceived(!!v); if (!v) setAdvanceAmount(""); }} />
-                  <span className="text-sm">Advance Received?</span>
-                </label>
-                {advanceReceived && (
-                  <div className="space-y-1.5">
-                    <Label className="text-sm">Receipt Amount (₹)</Label>
-                    <Input type="number" step="0.01" value={advanceAmount} onChange={(e) => setAdvanceAmount(e.target.value)} placeholder="0" max={orderValue || undefined} />
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          <OrderFormFields
+            orderType={orderType} setOrderType={setOrderType}
+            orderName={orderName} setOrderName={setOrderName}
+            lotName={lotName} setLotName={setLotName}
+            orderOwner={orderOwner} setOrderOwner={setOrderOwner}
+            quoteNo={quoteNo} setQuoteNo={setQuoteNo}
+            colourShade={colourShade} setColourShade={setColourShade}
+            salesperson={salesperson} setSalesperson={setSalesperson}
+            commercialStatus={commercialStatus} setCommercialStatus={setCommercialStatus}
+            orderDate={orderDate} setOrderDate={setOrderDate}
+            selectedProducts={selectedProducts} setSelectedProducts={setSelectedProducts}
+            qty={qty} setQty={setQty}
+            sqft={sqft} setSqft={setSqft}
+            orderValue={orderValue} setOrderValue={setOrderValue}
+            advanceReceived={advanceReceived} setAdvanceReceived={setAdvanceReceived}
+            advanceAmount={advanceAmount} setAdvanceAmount={setAdvanceAmount}
+            projectNames={projectNames}
+            ownerOptions={ownerOptions}
+            colourShades={colourShades}
+            salespersons={salespersons}
+            commercialStatuses={commercialStatuses}
+            products={products}
+          />
 
           <Button type="submit" className="w-full" disabled={submitting}>
             {submitting ? "Creating…" : "Create Order"}
