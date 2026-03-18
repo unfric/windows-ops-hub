@@ -26,9 +26,9 @@ Deno.serve(async (req) => {
       case "get":
         return await handleGet(supabase, payload.id);
       case "create":
-        return await handleCreate(supabase, payload.data);
+        return await handleCreate(supabase, payload.data, authResult.user);
       case "update":
-        return await handleUpdate(supabase, payload.id, payload.data);
+        return await handleUpdate(supabase, payload.id, payload.data, authResult.user);
       case "update-field":
         return await handleUpdateField(supabase, payload.id, payload.field, payload.value, payload.module, authResult.user);
       case "add-log":
@@ -156,8 +156,24 @@ async function handleUpdateField(supabase: any, id: string, field: string, value
 async function handleAddLog(supabase: any, table: string, data: any, user: any) {
   if (!table || !data) return errorResponse("Table and Data are required");
   
-  // Inject user_id if not present and table supports it
-  const logData = { ...data, updated_by: data.updated_by || user.id };
+  // Inject user tracking columns based on schema conventions
+  const logData = { ...data };
+  
+  if (["payment_logs", "production_logs", "dispatch_logs", "installation_logs"].includes(table)) {
+    if (!logData.entered_by) logData.entered_by = user.id;
+    // For payment logs that are confirmed immediately, also set confirmed_by
+    if (table === "payment_logs" && logData.status === "Confirmed" && !logData.confirmed_by) {
+      logData.confirmed_by = user.id;
+    }
+  } else if (table === "rework_logs") {
+    if (!logData.reported_by) logData.reported_by = user.id;
+  } else if (["audit_log", "order_activity_log"].includes(table)) {
+    if (!logData.updated_by) logData.updated_by = user.id;
+  } else {
+    // For any other tables, keep existing behavior but be cautious
+    // If you add more modules, expand the whitelist above.
+    if (!logData.updated_by) logData.updated_by = user.id;
+  }
 
   const { data: result, error } = await supabase
     .from(table)
@@ -169,12 +185,21 @@ async function handleAddLog(supabase: any, table: string, data: any, user: any) 
   return jsonResponse(result, 201);
 }
 
-async function handleUpdateLog(supabase: any, table: string, id: string, data: any, _user: any) {
+async function handleUpdateLog(supabase: any, table: string, id: string, data: any, user: any) {
   if (!table || !id || !data) return errorResponse("Table, ID, and Data are required");
+
+  const updateData = { ...data };
+  
+  // Specific injection for payment confirmation
+  if (table === "payment_logs" && updateData.status === "Confirmed" && !updateData.confirmed_by) {
+    updateData.confirmed_by = user.id;
+  } else if (["audit_log", "order_activity_log"].includes(table)) {
+    if (!updateData.updated_by) updateData.updated_by = user.id;
+  }
 
   const { data: result, error } = await supabase
     .from(table)
-    .update(data)
+    .update(updateData)
     .eq("id", id)
     .select()
     .single();
@@ -195,12 +220,17 @@ async function handleDeleteLog(supabase: any, table: string, id: string, _user: 
   return jsonResponse({ success: true });
 }
 
-async function handleCreate(supabase: any, data: any) {
+async function handleCreate(supabase: any, data: any, user: any) {
   if (!data) return errorResponse("Data is required");
+
+  // Inject creator/updater
+  const createData = { ...data };
+  if (!createData.created_by) createData.created_by = user.id;
+  if (!createData.updated_by) createData.updated_by = user.id;
 
   const { data: result, error } = await supabase
     .from("orders")
-    .insert(data)
+    .insert(createData)
     .select()
     .single();
 
@@ -208,16 +238,19 @@ async function handleCreate(supabase: any, data: any) {
   return jsonResponse(result, 201);
 }
 
-async function handleUpdate(supabase: any, id: string, data: any) {
+async function handleUpdate(supabase: any, id: string, data: any, user: any) {
   if (!id) return errorResponse("Order ID is required");
   if (!data) return errorResponse("Data is required");
 
   delete data.id;
   delete data.created_at;
+  
+  const updateData = { ...data };
+  if (!updateData.updated_by) updateData.updated_by = user.id;
 
   const { data: result, error } = await supabase
     .from("orders")
-    .update(data)
+    .update(updateData)
     .eq("id", id)
     .select()
     .single();
