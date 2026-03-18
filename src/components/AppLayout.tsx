@@ -19,6 +19,7 @@ import {
   Warehouse,
   RefreshCw,
   User,
+  Layers,
   Activity,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -35,7 +36,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 // Map each nav item to the roles that can see it. Empty = visible to all.
 const navItems = [
-  { label: "Pulse", icon: Activity, path: "/", group: 0, roles: [] as string[] },
+  { label: "Pulse", icon: Layers, path: "/", group: 0, roles: [] as string[] },
   { label: "Orders", icon: Package, path: "/orders", group: 0, roles: [] },
   { label: "Sales", icon: Package, path: "/sales", group: 1, roles: ["sales"] },
   { label: "Finance", icon: DollarSign, path: "/finance", group: 1, roles: ["finance"] },
@@ -46,7 +47,7 @@ const navItems = [
   { label: "Production", icon: Factory, path: "/production", group: 4, roles: ["production"] },
   { label: "Dispatch", icon: Truck, path: "/dispatch", group: 5, roles: ["dispatch"] },
   { label: "Installation", icon: Wrench, path: "/installation", group: 5, roles: ["installation"] },
-  { label: "Rework", icon: RefreshCw, path: "/rework", group: 6, roles: [] },
+  { label: "Rework", icon: RefreshCw, path: "/rework", group: 6, roles: ["rework"] },
   { label: "Settings", icon: Settings, path: "/settings", group: 7, roles: ["admin"] },
 ];
 
@@ -101,15 +102,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     <div className="flex h-screen overflow-hidden">
       <aside className="flex w-56 flex-col bg-sidebar text-sidebar-foreground">
         <div className="flex h-20 items-center gap-3 border-b border-sidebar-border/30 px-6 bg-gradient-to-b from-sidebar-background to-transparent">
-          <div className="relative group">
-            <div className="absolute -inset-1 bg-primary/40 rounded-xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200"></div>
-            <div className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-sidebar-accent border border-white/10 shadow-2xl backdrop-blur-xl">
-              <Activity className="h-5 w-5 text-primary animate-[pulse_3s_infinite]" />
-            </div>
+          <div className="relative flex h-9 w-9 items-center justify-center rounded-lg bg-[#F2A111] text-white shadow-sm">
+            <Activity className="h-5 w-5" />
           </div>
-          <div className="flex flex-col">
-            <span className="font-black text-xl tracking-tighter text-white uppercase italic leading-none">Pulse</span>
-            <span className="text-[8px] font-bold tracking-[.3em] uppercase text-primary/60 mt-1">Industrial</span>
+          <div className="flex flex-col ml-1">
+            <span className="font-medium text-lg tracking-tight text-white leading-none">Pulse</span>
+            <span className="text-[9px] font-medium tracking-[.15em] text-white/50 mt-1 uppercase">Operations Hub</span>
           </div>
         </div>
         <nav className="flex-1 overflow-auto p-2 space-y-0.5">
@@ -145,15 +143,15 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <DropdownMenuContent align="end" className="w-64 p-2 rounded-[24px] border border-slate-200 shadow-[0_20px_48px_rgba(0,0,0,0.1)] backdrop-blur-3xl bg-white/90">
               <DropdownMenuLabel className="p-4 pt-4 pb-4">
                 <div className="flex flex-col gap-1">
-                  <p className="text-sm font-black text-slate-900 uppercase italic tracking-tight">{profileName || "System Operative"}</p>
+                  <p className="text-sm font-medium text-slate-900 tracking-tight">{profileName || "Workspace User"}</p>
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest truncate">{user?.email}</p>
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator className="bg-slate-100 mx-2" />
               <div className="p-1">
-                <DropdownMenuItem onClick={signOut} className="flex items-center gap-3 cursor-pointer py-3 px-4 rounded-xl text-red-500 font-bold text-xs uppercase tracking-widest hover:bg-red-50 hover:text-red-600 transition-colors">
+                <DropdownMenuItem onClick={signOut} className="flex items-center gap-3 cursor-pointer py-2 px-4 rounded-md text-red-600 font-medium text-sm hover:bg-red-50 hover:text-red-700 transition-colors">
                   <LogOut className="h-4 w-4" />
-                  Terminate Session
+                  Sign Out
                 </DropdownMenuItem>
               </div>
             </DropdownMenuContent>

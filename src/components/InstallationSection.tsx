@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/table";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { Trash2 } from "lucide-react";
 import OrderActivityLog from "./OrderActivityLog";
 
 interface Props {
@@ -55,6 +56,17 @@ export default function InstallationSection({ orderId, order, onRefresh, updateO
       setWindowsCount("");
       setSupervisor("");
       setRemarks("");
+      onRefresh();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
+  };
+
+  const handleDeleteInstall = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this installation entry?")) return;
+    try {
+      await api.orders.deleteLog("installation_logs", id);
+      toast.success("Entry deleted");
       onRefresh();
     } catch (error: any) {
       toast.error(error.message);
@@ -144,6 +156,7 @@ export default function InstallationSection({ orderId, order, onRefresh, updateO
                   <TableHead className="text-right">Windows</TableHead>
                   <TableHead>Supervisor</TableHead>
                   <TableHead>Remarks</TableHead>
+                  {!readOnly && <TableHead className="w-10"></TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -153,6 +166,18 @@ export default function InstallationSection({ orderId, order, onRefresh, updateO
                     <TableCell className="text-right font-medium">{l.windows_installed}</TableCell>
                     <TableCell className="text-sm">{l.site_supervisor || "—"}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{l.remarks || "—"}</TableCell>
+                    {!readOnly && (
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive"
+                          onClick={() => handleDeleteInstall(l.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>

@@ -19,7 +19,7 @@ import { format } from "date-fns";
 const ALL_ROLES = [
   "sales", "finance", "survey", "design", "procurement",
   "stores", "production", "dispatch", "installation",
-  "management", "admin",
+  "rework", "management", "admin",
 ] as const;
 
 interface Profile {

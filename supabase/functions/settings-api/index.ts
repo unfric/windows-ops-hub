@@ -5,7 +5,8 @@ import { corsHeaders } from "../_shared/cors.ts";
 /**
  * Handles system-wide settings and configuration lists.
  */
-Deno.serve(async (req) => {
+// @ts-ignore
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -49,7 +50,8 @@ async function handleList() {
     productTypesRes,
     colourShadesRes,
     unitsRes,
-    vendorsRes
+    vendorsRes,
+    tatConfigRes
   ] = await Promise.all([
     adminClient.from("app_settings").select("*"),
     adminClient.from("salespersons").select("*").order("name"),
@@ -61,6 +63,7 @@ async function handleList() {
     adminClient.from("colour_shades").select("*").order("name"),
     adminClient.from("production_units").select("*").order("name"),
     adminClient.from("coating_vendors").select("*").order("name"),
+    adminClient.from("tat_config").select("*"),
   ]);
 
   return jsonResponse({
@@ -74,6 +77,7 @@ async function handleList() {
     colour_shades: colourShadesRes.data || [],
     production_units: unitsRes.data || [],
     coating_vendors: vendorsRes.data || [],
+    tat_config: tatConfigRes.data || [],
   });
 }
 

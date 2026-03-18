@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Plus, Trash2, Save, Palette, Settings, RefreshCw, Users, Database } from "lucide-react";
+import { Plus, Trash2, Save, Palette, Settings, RefreshCw, Users, Database, Download, Upload, Pencil, X } from "lucide-react";
+import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
 import {
   Accordion,
@@ -26,6 +27,8 @@ function ConfigList({ table, title }: { table: string; title: string }) {
   const [items, setItems] = useState<ConfigItem[]>([]);
   const [newName, setNewName] = useState("");
   const [loading, setLoading] = useState(true);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
 
   const fetchItems = async () => {
     try {
@@ -73,10 +76,84 @@ function ConfigList({ table, title }: { table: string; title: string }) {
     }
   };
 
+  const startEdit = (item: ConfigItem) => {
+    setEditId(item.id);
+    setEditName(item.name);
+  };
+
+  const saveEdit = async (item: ConfigItem) => {
+    const updatedName = editName.trim();
+    if (!updatedName) return;
+    if (updatedName === item.name) {
+      setEditId(null);
+      return;
+    }
+    try {
+      await api.settings.upsert(table, { id: item.id, name: updatedName, active: item.active });
+      toast.success(`${title} updated`);
+      setEditId(null);
+      fetchItems();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update item");
+    }
+  };
+
+  const handleExport = () => {
+    const data = items.map(i => ({ Name: i.name, Active: i.active ? "Yes" : "No" }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, title);
+    XLSX.writeFile(wb, `${table}_export.xlsx`);
+  };
+
+  const handleImport = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".xlsx,.xls,.csv";
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        try {
+          const bstr = evt.target?.result;
+          const wb = XLSX.read(bstr, { type: "binary" });
+          const wsname = wb.SheetNames[0];
+          const ws = wb.Sheets[wsname];
+          const data = XLSX.utils.sheet_to_json(ws);
+          
+          let count = 0;
+          for (const row of data as any[]) {
+            const name = row.Name || row.name;
+            if (name) {
+              const active = row.Active === "No" || row.active === false ? false : true;
+              await api.settings.upsert(table, { name: String(name).trim(), active });
+              count++;
+            }
+          }
+          toast.success(`Imported ${count} items successfully`);
+          fetchItems();
+        } catch (err: any) {
+          toast.error("Import failed: " + err.message);
+        }
+      };
+      reader.readAsBinaryString(file);
+    };
+    input.click();
+  };
+
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
         <CardTitle className="text-base">{title}</CardTitle>
+        <div className="flex gap-2">
+          <Button size="icon" variant="outline" className="h-7 w-7" onClick={handleExport} title="Export">
+            <Download className="h-3.5 w-3.5" />
+          </Button>
+          <Button size="icon" variant="outline" className="h-7 w-7" onClick={handleImport} title="Import">
+            <Upload className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="space-y-2 mb-3">
@@ -86,14 +163,40 @@ function ConfigList({ table, title }: { table: string; title: string }) {
             <p className="text-sm text-muted-foreground">None configured</p>
           ) : (
             items.map((item) => (
-              <div key={item.id} className="flex items-center justify-between rounded-md border px-3 py-2">
-                <span className={`text-sm ${!item.active ? "text-muted-foreground line-through" : ""}`}>{item.name}</span>
-                <div className="flex items-center gap-2">
-                  <Switch checked={item.active} onCheckedChange={() => toggle(item)} />
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => remove(item.id)}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
+              <div key={item.id} className="flex items-center justify-between rounded-md border px-3 py-2 group">
+                {editId === item.id ? (
+                  <div className="flex flex-1 items-center gap-2 mr-2">
+                    <Input
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") saveEdit(item);
+                        if (e.key === "Escape") setEditId(null);
+                      }}
+                      autoFocus
+                      className="h-7 text-sm py-1"
+                    />
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-success shrink-0" onClick={() => saveEdit(item)}>
+                      <Save className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground shrink-0" onClick={() => setEditId(null)}>
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <span className={`text-sm ${!item.active ? "text-muted-foreground line-through" : ""}`}>{item.name}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => startEdit(item)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Switch checked={item.active} onCheckedChange={() => toggle(item)} />
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => remove(item.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </>
+                )}
               </div>
             ))
           )}
@@ -250,6 +353,22 @@ export default function GeneralSettingsPage() {
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground font-bold italic">Core Business Logic</Label>
               <ConfigList table="commercial_statuses" title="Commercial Statuses" />
+            </div>
+
+            <div className="space-y-1.5 pt-4 border-t">
+              <Label className="text-xs text-muted-foreground font-bold uppercase">Default TAT (Days)</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  value={editValues["default_tat_days"] || "30"}
+                  onChange={(e) => setEditValues({ ...editValues, default_tat_days: e.target.value })}
+                  className="w-24"
+                />
+                <Button size="sm" variant="outline" onClick={() => save("default_tat_days")}>
+                  <Save className="h-3.5 w-3.5 mr-1" /> Save
+                </Button>
+              </div>
+              <p className="text-[10px] text-muted-foreground">Used for calculating auto-deadline for new orders.</p>
             </div>
           </AccordionContent>
         </AccordionItem>

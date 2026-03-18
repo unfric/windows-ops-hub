@@ -124,13 +124,20 @@ export default function FinanceSection({ orderId, order, onRefresh, updateOrder,
     }
   };
 
-  const deleteDraftPayment = async (p: Payment) => {
+  const handleDeletePayment = async (p: Payment) => {
+    const isConfirmed = p.status === "Confirmed";
+    const msg = isConfirmed 
+      ? "This payment is CONFIRMED. Are you sure you want to delete it? This will affect the order balance." 
+      : "Are you sure you want to delete this draft payment?";
+    
+    if (!window.confirm(msg)) return;
+
     try {
       if (p.source_module === "Sales") {
         await api.orders.updateField(orderId, "advance_received", 0, "Finance");
       }
       await api.orders.deleteLog("payment_logs", p.id);
-      toast.success("Draft payment deleted");
+      toast.success(isConfirmed ? "Payment deleted" : "Draft payment deleted");
       onRefresh();
     } catch (error: any) {
       toast.error(error.message);
@@ -289,15 +296,13 @@ export default function FinanceSection({ orderId, order, onRefresh, updateOrder,
                               <Pencil className="h-3.5 w-3.5" />
                             </Button>
                             {p.status === "Draft" && (
-                              <>
-                                <Button variant="ghost" size="icon" className="h-7 w-7 text-success" onClick={() => confirmPayment(p)} title="Confirm">
-                                  <Check className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteDraftPayment(p)} title="Delete">
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-success" onClick={() => confirmPayment(p)} title="Confirm">
+                                <Check className="h-3.5 w-3.5" />
+                              </Button>
                             )}
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeletePayment(p)} title="Delete">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
                           </>
                         )}
                         {readOnly && <span className="text-xs text-muted-foreground italic">View Only</span>}

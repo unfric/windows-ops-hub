@@ -19,6 +19,9 @@ import { toast } from "sonner";
 import { importOrdersFromFile, exportOrdersToExcel, downloadImportTemplate, exportDataToExcel } from "@/lib/excelUtils";
 import CreateOrderDialog from "@/components/CreateOrderDialog";
 import EditOrderDialog from "@/components/EditOrderDialog";
+import DataTableLayout from "@/components/ui/data-table-layout";
+import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 interface Order {
   id: string;
@@ -40,6 +43,10 @@ interface Order {
   dispatch_status: string;
   survey_done_windows: number;
   design_released_windows: number;
+  order_date: string | null;
+  tat_date: string | null;
+  target_delivery_date: string | null;
+  dispatch_date: string | null;
 }
 
 interface ReworkInfo {
@@ -48,7 +55,7 @@ interface ReworkInfo {
 }
 
 const commercialColor = (status: string) => {
-  if (status === "Order Confirmed" || status === "Confirmed") return "bg-success/15 text-success border-success/20";
+  if (status === "Confirmed") return "bg-success/15 text-success border-success/20";
   if (status === "Pipeline" || status === "pending") return "bg-warning/15 text-warning border-warning/20";
   return "bg-muted text-muted-foreground";
 };
@@ -81,7 +88,7 @@ export default function SalesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<Filters>(emptyFilters);
-  const [tab, setTab] = useState("open");
+  const [tab, setTab] = useState("pipeline");
 
   const [salespersons, setSalespersons] = useState<string[]>([]);
   const [owners, setOwners] = useState<string[]>([]);
@@ -160,9 +167,9 @@ export default function SalesPage() {
   useEffect(() => { if (orders.length > 0) fetchFilterOptions(); }, [orders.length]);
 
   const tabFiltered = orders.filter((o) => {
-    const status = dispatchStatusMap[o.id] || "Not Dispatched";
-    if (tab === "open") return status !== "Fully Dispatched";
-    if (tab === "dispatched") return status === "Fully Dispatched";
+    const isConfirmed = !!o.sales_order_no || ["Advance Received", "Order Received", "In Production", "Confirmed"].includes(o.commercial_status || "");
+    if (tab === "pipeline") return !isConfirmed;
+    if (tab === "confirmed") return isConfirmed;
     return true;
   });
 
@@ -180,7 +187,17 @@ export default function SalesPage() {
     return true;
   });
 
-  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+  const activeFilters = Object.entries(filters)
+    .filter(([_, v]) => v)
+    .map(([k, v]) => ({
+      key: k,
+      label: k === "orderOwner" ? "Owner" : 
+             k === "commercialStatus" ? "Stage" :
+             k.charAt(0).toUpperCase() + k.slice(1),
+      value: v
+    }));
+
+  const activeFilterCount = activeFilters.length;
 
   const handleImport = async () => {
     const input = document.createElement("input");
@@ -201,6 +218,7 @@ export default function SalesPage() {
   const handleExport = () => {
     const headers = [
       "Quotation No", "SO No", "Order Name", "Owner", "Salesperson",
+      "Order Date", "TAT Date", "Target Delv", "Disp Date",
       "Product", "Shade", "Win", "Value", "Receipt", "Balance",
       "Commercial Status", "Dispatch Status"
     ];
@@ -211,6 +229,10 @@ export default function SalesPage() {
       "Order Name": o.order_name,
       "Owner": o.dealer_name,
       "Salesperson": o.salesperson || "",
+      "Order Date": o.order_date || "",
+      "TAT Date": o.tat_date || "",
+      "Target Delv": o.target_delivery_date || "",
+      "Disp Date": o.dispatch_date || "",
       "Product": getProductDisplay(o),
       "Shade": o.colour_shade || "",
       "Win": o.total_windows,
@@ -233,155 +255,226 @@ export default function SalesPage() {
     return o.product_type;
   };
 
+  const columns = [
+    {
+      header: "Project Name",
+      accessor: (o: Order) => (
+        <div className="flex flex-col">
+          <Link to={`/orders/${o.id}`} className="font-medium text-blue-600 hover:underline">{o.order_name}</Link>
+          <span className="text-[10px] text-muted-foreground uppercase">{o.order_type}</span>
+        </div>
+      ),
+      className: "min-w-[180px]"
+    },
+    {
+      header: "Default Quote",
+      accessor: (o: Order) => o.quote_no || "—",
+      className: "text-[#5c6e82] min-w-[140px]"
+    },
+    {
+      header: "Sales Order",
+      accessor: (o: Order) => o.sales_order_no || "—",
+      className: "text-[#5c6e82]"
+    },
+    {
+      header: "Order Date",
+      accessor: (o: Order) => o.order_date ? new Date(o.order_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: Order) => o.order_date,
+      className: "whitespace-nowrap",
+    },
+    {
+      header: "TAT Date",
+      accessor: (o: Order) => o.tat_date ? new Date(o.tat_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: Order) => o.tat_date,
+      className: "whitespace-nowrap text-blue-600 font-medium",
+    },
+    {
+      header: "Target Delv",
+      accessor: (o: Order) => o.target_delivery_date ? new Date(o.target_delivery_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: Order) => o.target_delivery_date,
+      className: "whitespace-nowrap",
+    },
+    {
+      header: "Dispatch Date",
+      accessor: (o: Order) => o.dispatch_date ? new Date(o.dispatch_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: Order) => o.dispatch_date,
+      className: "whitespace-nowrap text-emerald-600 font-medium",
+    },
+    {
+      header: "Area",
+      accessor: (o: Order) => <span className="text-[#5c6e82]">{o.sqft || 0} Sqft</span>,
+    },
+    {
+      header: "Qty",
+      accessor: (o: Order) => <span className="text-[#5c6e82] whitespace-nowrap">{o.design_released_windows || 0} / {o.total_windows}</span>,
+      className: "whitespace-nowrap",
+    },
+    {
+      header: "Opportunity Value",
+      accessor: (o: Order) => <span className="text-[#5c6e82]">₹{Number(o.order_value).toLocaleString()}</span>,
+    },
+    {
+      header: "Deal Stage",
+      accessor: (o: Order) => (
+        <Badge variant="outline" className={cn("text-[10px] uppercase font-semibold", commercialColor(o.commercial_status))}>
+          {o.commercial_status}
+        </Badge>
+      ),
+    },
+    {
+      header: "Managed By",
+      accessor: (o: Order) => <span className="text-[#5c6e82]">{o.dealer_name}</span>,
+    },
+    {
+      header: "Product / Shade",
+      accessor: (o: Order) => (
+        <div className="flex flex-col">
+          <span className="text-[#2b3a4a]">{getProductDisplay(o)}</span>
+          <span className="text-[#5c6e82] text-[10px] truncate max-w-[120px]">{o.colour_shade || "—"}</span>
+        </div>
+      ),
+    },
+    {
+      header: "Balance",
+      accessor: (o: Order) => {
+        const receipt = receiptMap[o.id] ?? 0;
+        const balance = o.order_value - receipt;
+        return <span className={balance > 0 ? "text-amber-600 font-medium" : "text-emerald-600 font-medium"}>₹{Number(balance).toLocaleString()}</span>;
+      },
+    },
+    {
+      header: "Dispatch Status",
+      accessor: (o: Order) => {
+        const status = dispatchStatusMap[o.id] || "Not Dispatched";
+        return (
+          <Badge variant="outline" className={cn("text-[10px] uppercase", dispatchColor(status))}>
+            {status}
+          </Badge>
+        );
+      },
+    }
+  ];
+
+  const tabsConfig = [
+    { id: "pipeline", label: "Pipeline" },
+    { id: "confirmed", label: "Confirmed" },
+    { id: "all", label: "All" },
+  ];
+
+  const renderTopRightActions = () => (
+    <Button variant="outline" size="sm" className="h-8 text-blue-600 border-blue-200 bg-blue-50/50 hover:bg-blue-100/50 font-medium px-4" onClick={() => setCreateOpen(true)}>
+      <Plus className="h-4 w-4 mr-1" /> New Order
+    </Button>
+  );
+
+  const SalesFilterPanel = (
+    <div className="flex flex-col h-full">
+      <div className="space-y-4 px-2">
+        <div className="grid gap-2">
+          <Label className="text-sm font-normal text-muted-foreground">Date period</Label>
+          <Select defaultValue="Last 90 days">
+            <SelectTrigger><SelectValue placeholder="Select period" /></SelectTrigger>
+            <SelectContent><SelectItem value="Last 90 days">Last 90 days</SelectItem></SelectContent>
+          </Select>
+        </div>
+        
+        <div className="grid gap-2">
+          <Label className="text-sm font-normal text-muted-foreground">Date range</Label>
+          <Input type="date" className="text-sm text-muted-foreground" />
+        </div>
+
+        <div className="grid gap-2">
+          <Label className="text-sm font-normal text-muted-foreground">Quote type</Label>
+          <Select>
+            <SelectTrigger><SelectValue placeholder="Select quote type" /></SelectTrigger>
+            <SelectContent><SelectItem value="new">New</SelectItem></SelectContent>
+          </Select>
+        </div>
+
+        <div className="grid gap-2">
+          <Label className="text-sm font-normal text-muted-foreground">Account (Owner)</Label>
+          <Select value={filters.orderOwner} onValueChange={(val) => setFilters(f => ({ ...f, orderOwner: val === "all" ? "" : val }))}>
+            <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Accounts</SelectItem>
+              {owners.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="grid gap-2">
+          <Label className="text-sm font-normal text-muted-foreground">Contact (Salesperson)</Label>
+          <Select value={filters.salesperson} onValueChange={(val) => setFilters(f => ({ ...f, salesperson: val === "all" ? "" : val }))}>
+            <SelectTrigger><SelectValue placeholder="Select contact" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Contacts</SelectItem>
+              {salespersons.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="grid gap-2">
+          <Label className="text-sm font-normal text-muted-foreground">Opportunity stage</Label>
+          <Select value={filters.commercialStatus} onValueChange={(val) => setFilters(f => ({ ...f, commercialStatus: val === "all" ? "" : val }))}>
+            <SelectTrigger><SelectValue placeholder="Select stage" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Stages</SelectItem>
+              {commercialStatuses.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="grid gap-2">
+          <Label className="text-sm font-normal text-muted-foreground">Opportunity category</Label>
+          <Select>
+            <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
+            <SelectContent><SelectItem value="standard">Standard</SelectItem></SelectContent>
+          </Select>
+        </div>
+
+        <div className="grid gap-2">
+          <Label className="text-sm font-normal text-muted-foreground">Opportunity sources</Label>
+          <Select>
+            <SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
+            <SelectContent><SelectItem value="online">Online</SelectItem><SelectItem value="referral">Referral</SelectItem></SelectContent>
+          </Select>
+        </div>
+      </div>
+      
+      <div className="mt-auto pt-6 pb-2 px-2 flex gap-3">
+        <Button variant="outline" className="flex-1" onClick={() => setFilters(emptyFilters)}>Clear</Button>
+        <Button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white">Apply</Button>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="p-6">
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Sales</h1>
-          <p className="text-sm text-muted-foreground">{orders.length} total orders</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => downloadImportTemplate()}>
-            <FileSpreadsheet className="h-4 w-4" /> Template
+    <div className="flex-1 w-full bg-white flex flex-col h-[calc(100vh-64px)]">
+      <DataTableLayout
+        moduleName="sales"
+        tabs={tabsConfig}
+        activeTab={tab}
+        onTabChange={setTab}
+        searchValue={search}
+        onSearch={setSearch}
+        activeFilterCount={activeFilterCount}
+        activeFilters={activeFilters}
+        onRemoveFilter={(key) => setFilters(prev => ({ ...prev, [key]: "" }))}
+        onClearFilters={() => setFilters(emptyFilters)}
+        filterChildren={SalesFilterPanel}
+        columns={columns}
+        data={filtered}
+        getRowId={(o) => o.id}
+        renderTopRightActions={renderTopRightActions}
+        onTemplate={() => downloadImportTemplate()}
+        onImport={handleImport}
+        onExport={handleExport}
+        renderRowAction={(o) => (
+          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground/40 hover:text-foreground hover:bg-slate-200 rounded transition-colors shrink-0 opacity-0 group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditOrderId(o.id); }}>
+            <Pencil className="h-3.5 w-3.5" />
           </Button>
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={handleImport}>
-            <Upload className="h-4 w-4" /> Import
-          </Button>
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={handleExport}>
-            <Download className="h-4 w-4" /> Export
-          </Button>
-          <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4" /> New Order
-          </Button>
-        </div>
-      </div>
-
-      <div className="mb-4 flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search by name, owner, quotation..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button size="sm" variant="outline" className="gap-1.5">
-              <Filter className="h-4 w-4" />
-              Filters
-              {activeFilterCount > 0 && (
-                <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs rounded-full">
-                  {activeFilterCount}
-                </Badge>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-72 space-y-3" align="start">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Filters</span>
-              {activeFilterCount > 0 && (
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setFilters(emptyFilters)}>
-                  <X className="h-3 w-3 mr-1" /> Clear
-                </Button>
-              )}
-            </div>
-            <FilterSelect label="Salesperson" value={filters.salesperson} options={salespersons} onChange={(v) => setFilters({ ...filters, salesperson: v })} />
-            <FilterSelect label="Order Owner" value={filters.orderOwner} options={owners} onChange={(v) => setFilters({ ...filters, orderOwner: v })} />
-            <FilterSelect label="Commercial Status" value={filters.commercialStatus} options={commercialStatuses} onChange={(v) => setFilters({ ...filters, commercialStatus: v })} />
-          </PopoverContent>
-        </Popover>
-      </div>
-
-      <Tabs value={tab} onValueChange={setTab} className="mb-4">
-        <TabsList>
-          <TabsTrigger value="open">Open Orders</TabsTrigger>
-          <TabsTrigger value="dispatched">Dispatched Orders</TabsTrigger>
-          <TabsTrigger value="all">All Orders</TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      <div className="rounded-md border bg-card overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="min-w-[60px]">Type</TableHead>
-              <TableHead className="min-w-[140px]">Order Name</TableHead>
-              <TableHead className="min-w-[120px]">Owner</TableHead>
-              <TableHead className="min-w-[130px]">Quotation No</TableHead>
-              <TableHead className="min-w-[70px]">SO No</TableHead>
-              <TableHead className="min-w-[80px]">Shade</TableHead>
-              <TableHead className="min-w-[100px]">Salesperson</TableHead>
-              <TableHead className="min-w-[120px]">Product Type</TableHead>
-              <TableHead className="text-right min-w-[70px]">Windows</TableHead>
-              <TableHead className="text-right min-w-[80px]">Avl to Work</TableHead>
-              <TableHead className="text-right min-w-[60px]">Sqft</TableHead>
-              <TableHead className="text-right min-w-[90px]">Order Value</TableHead>
-              <TableHead className="text-right min-w-[80px]">Receipt</TableHead>
-              <TableHead className="text-right min-w-[80px]">Balance</TableHead>
-              <TableHead className="text-right min-w-[80px]">Rework Total</TableHead>
-              <TableHead className="min-w-[130px]">Latest Issue</TableHead>
-              <TableHead className="min-w-[120px]">Dispatch Status</TableHead>
-              <TableHead className="min-w-[110px]">Commercial</TableHead>
-              <TableHead className="w-[40px]"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={19} className="text-center py-8 text-muted-foreground">Loading...</TableCell>
-              </TableRow>
-            ) : filtered.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={19} className="text-center py-8 text-muted-foreground">No orders found</TableCell>
-              </TableRow>
-            ) : (
-              filtered.map((order) => {
-                const rework = reworkMap[order.id];
-                const receipt = receiptMap[order.id] ?? 0;
-                const balance = order.order_value - receipt;
-                return (
-                  <TableRow key={order.id} className="hover:bg-muted/50">
-                    <TableCell>
-                      <Badge variant="outline" className={typeColor(order.order_type)}>
-                        {order.order_type}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Link to={`/orders/${order.id}`} className="font-medium text-primary hover:underline">{order.order_name}</Link>
-                    </TableCell>
-                    <TableCell className="text-sm">{order.dealer_name}</TableCell>
-                    <TableCell className="text-sm">{order.quote_no || "—"}</TableCell>
-                    <TableCell className="text-sm">{order.sales_order_no || "—"}</TableCell>
-                    <TableCell className="text-sm">{order.colour_shade || "—"}</TableCell>
-                    <TableCell className="text-sm">{order.salesperson || "—"}</TableCell>
-                    <TableCell className="text-sm">{getProductDisplay(order)}</TableCell>
-                    <TableCell className="text-right">{order.total_windows}</TableCell>
-                    <TableCell className="text-right">{getAvlToWork(order)}</TableCell>
-                    <TableCell className="text-right">{order.sqft}</TableCell>
-                    <TableCell className="text-right font-medium">₹{Number(order.order_value).toLocaleString()}</TableCell>
-                    <TableCell className="text-right">₹{Number(receipt).toLocaleString()}</TableCell>
-                    <TableCell className="text-right">₹{Number(balance).toLocaleString()}</TableCell>
-                    <TableCell className="text-right">{rework?.totalQty || 0}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground truncate max-w-[180px]">{rework?.latestIssue || "—"}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={dispatchColor(dispatchStatusMap[order.id] || "Not Dispatched")}>
-                        {dispatchStatusMap[order.id] || "Not Dispatched"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={commercialColor(order.commercial_status)}>
-                        {order.commercial_status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditOrderId(order.id)}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
+        )}
+      />
 
       <CreateOrderDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={fetchData} />
       {editOrderId && (
@@ -396,21 +489,3 @@ export default function SalesPage() {
   );
 }
 
-function FilterSelect({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
-  return (
-    <div className="space-y-1">
-      <label className="text-xs text-muted-foreground">{label}</label>
-      <Select value={value || "all"} onValueChange={(v) => onChange(v === "all" ? "" : v)}>
-        <SelectTrigger className="h-8 text-sm">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All</SelectItem>
-          {options.map((o) => (
-            <SelectItem key={o} value={o}>{o}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}

@@ -6,12 +6,13 @@ import { Progress } from "@/components/ui/progress";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
-import { Search, Download } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Search, Download, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { exportDataToExcel } from "@/lib/excelUtils";
+import DataTableLayout from "@/components/ui/data-table-layout";
+import { cn } from "@/lib/utils";
 
 const STAGES = ["Cutting", "Assembly", "Glazing", "Quality", "Packed"] as const;
 
@@ -34,6 +35,10 @@ interface OrderWithProduction {
   extrusion_availability: string;
   glass_availability: string;
   coated_extrusion_availability: string;
+  order_date: string | null;
+  tat_date: string | null;
+  target_delivery_date: string | null;
+  dispatch_date: string | null;
   stageTotals: Record<string, number>;
 }
 
@@ -110,12 +115,21 @@ export default function ProductionDashboard() {
 
   const handleExport = (activeTab: string) => {
     const list = getFilteredOrders(activeTab);
-    const headers = ["Order", "Owner", "Quote No", "SO No", "Windows", "ATW", ...STAGES, "Progress %"];
+    const headers = [
+      "Order", "Owner", "Quote No", "SO No", "Salesperson",
+      "Order Date", "TAT Date", "Target Delv", "Disp Date",
+      "Windows", "ATW", ...STAGES, "Progress %"
+    ];
     const data = list.map(o => ({
       "Order": o.order_name,
       "Owner": o.dealer_name,
       "Quote No": o.quote_no || "",
       "SO No": o.sales_order_no || "",
+      "Salesperson": o.salesperson || "",
+      "Order Date": o.order_date || "",
+      "TAT Date": o.tat_date || "",
+      "Target Delv": o.target_delivery_date || "",
+      "Disp Date": o.dispatch_date || "",
       "Windows": o.total_windows,
       "ATW": avlToWork(o),
       "Cutting": o.stageTotals["Cutting"] || 0,
@@ -128,160 +142,243 @@ export default function ProductionDashboard() {
     exportDataToExcel(data, headers, `production_export_${activeTab}.xlsx`);
   };
 
-  const renderTable = (list: OrderWithProduction[]) => (
-    <div className="rounded-md border bg-card">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Order</TableHead>
-            <TableHead>Quote No</TableHead>
-            <TableHead>SO No</TableHead>
-            <TableHead className="text-right">Windows</TableHead>
-            <TableHead className="text-right">Avl to Work</TableHead>
-            <TableHead className="min-w-[140px]">Materials</TableHead>
-            {STAGES.map((s) => (
-              <TableHead key={s} className="text-center">{s}</TableHead>
-            ))}
-            <TableHead className="w-32">Progress</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {loading ? (
-            <TableRow><TableCell colSpan={6 + STAGES.length + 2} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
-          ) : list.length === 0 ? (
-            <TableRow><TableCell colSpan={6 + STAGES.length + 2} className="text-center py-8 text-muted-foreground">No orders</TableCell></TableRow>
-          ) : (
-            list.map((order) => {
-              const atw = avlToWork(order);
-              const progress = overallProgress(order);
-              return (
-                <TableRow key={order.id}>
-                  <TableCell>
-                    <Link to={`/orders/${order.id}`} className="font-medium text-primary hover:underline">
-                      {order.order_name}
-                    </Link>
-                    <div className="text-xs text-muted-foreground">{order.dealer_name}</div>
-                  </TableCell>
-                  <TableCell className="text-sm">{order.quote_no || "—"}</TableCell>
-                  <TableCell className="text-sm">{order.sales_order_no || "—"}</TableCell>
-                  <TableCell className="text-right font-medium">{order.total_windows}</TableCell>
-                  <TableCell className="text-right">{atw}</TableCell>
-                  <TableCell>
-                    <div className="flex flex-col gap-0.5 min-w-[130px] text-[11px]">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Hdw:</span>
-                        <span className={order.hardware_availability === "In Stock / Available" || order.hardware_availability === "Not Required" ? "text-green-600 font-medium" : order.hardware_availability === "Partially Available" || order.hardware_availability === "PO Placed" ? "text-amber-600 font-medium" : "text-red-500"}>
-                          {order.hardware_availability}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis mr-2">Ext:</span>
-                        <span className={order.extrusion_availability === "In Stock / Available" || order.extrusion_availability === "Not Required" ? "text-green-600 font-medium" : order.extrusion_availability === "Partially Available" || order.extrusion_availability === "PO Placed" ? "text-amber-600 font-medium whitespace-nowrap text-ellipsis overflow-hidden text-right" : "text-red-500 whitespace-nowrap text-ellipsis overflow-hidden text-right"} title={order.extrusion_availability}>
-                          {order.extrusion_availability}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis mr-2">Gls:</span>
-                        <span className={order.glass_availability === "In Stock / Available" || order.glass_availability === "Not Required" ? "text-green-600 font-medium" : order.glass_availability === "Partially Available" || order.glass_availability === "PO Placed" ? "text-amber-600 font-medium whitespace-nowrap text-ellipsis overflow-hidden text-right" : "text-red-500 whitespace-nowrap text-ellipsis overflow-hidden text-right"} title={order.glass_availability}>
-                          {order.glass_availability}
-                        </span>
-                      </div>
-                      <div className="flex justify-between mt-[1px]">
-                        <span className="text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis mr-1">Coat:</span>
-                        <span className={order.coated_extrusion_availability === "In Stock / Available" || order.coated_extrusion_availability === "Not Required" ? "text-green-600 font-medium max-w-[80px] whitespace-nowrap text-ellipsis overflow-hidden text-right inline-block" : order.coated_extrusion_availability === "Partially Available" || order.coated_extrusion_availability === "Sent to Coating" ? "text-amber-600 font-medium max-w-[80px] whitespace-nowrap text-ellipsis overflow-hidden text-right inline-block" : "text-red-500 max-w-[80px] whitespace-nowrap text-ellipsis overflow-hidden text-right inline-block"} title={order.coated_extrusion_availability}>
-                          {order.coated_extrusion_availability}
-                        </span>
-                      </div>
-                    </div>
-                  </TableCell>
-                  {STAGES.map((s) => (
-                    <TableCell key={s} className="text-center">
-                      <span className={(order.stageTotals[s] || 0) >= atw && atw > 0 ? "text-green-600 font-medium" : ""}>
-                        {order.stageTotals[s] || 0}
-                      </span>
-                    </TableCell>
-                  ))}
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Progress value={progress} className="h-2 flex-1" />
-                      <span className="text-xs text-muted-foreground w-8">{progress}%</span>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })
-          )}
-        </TableBody>
-      </Table>
-    </div>
+  const [search, setSearch] = useState("");
+  const [tab, setTab] = useState("all");
+  const [filters, setFilters] = useState({ salesperson: "", orderOwner: "" });
+  const [salespersons, setSalespersons] = useState<string[]>([]);
+  const [owners, setOwners] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (orders.length > 0) {
+      setOwners([...new Set(orders.map(o => o.dealer_name).filter(Boolean))].sort());
+      const sp = [...new Set(orders.map(o => o.salesperson).filter(Boolean))].sort();
+      setSalespersons(sp);
+    }
+  }, [orders]);
+
+  const activeTabList = getFilteredOrders(tab);
+  
+  const filtered = activeTabList.filter((o) => {
+    if (search) {
+      const s = search.toLowerCase();
+      if (!o.order_name.toLowerCase().includes(s) &&
+        !o.dealer_name.toLowerCase().includes(s) &&
+        !(o.quote_no || "").toLowerCase().includes(s) &&
+        !(o.sales_order_no || "").toLowerCase().includes(s)) return false;
+    }
+    if (filters.salesperson && o.salesperson !== filters.salesperson) return false;
+    if (filters.orderOwner && o.dealer_name !== filters.orderOwner) return false;
+    return true;
+  });
+
+  const activeFilters = Object.entries(filters)
+    .filter(([_, v]) => v)
+    .map(([k, v]) => ({
+      key: k,
+      label: k === "orderOwner" ? "Owner" : k.charAt(0).toUpperCase() + k.slice(1),
+      value: v
+    }));
+
+  const activeFilterCount = activeFilters.length;
+  const emptyFilters = { salesperson: "", orderOwner: "" };
+
+  const columns = [
+    {
+      header: "Project Name",
+      accessor: (o: OrderWithProduction) => (
+        <div className="flex flex-col">
+          <Link to={`/orders/${o.id}`} className="font-medium text-blue-600 hover:underline">{o.order_name}</Link>
+          <span className="text-[10px] text-muted-foreground uppercase">{o.order_type}</span>
+        </div>
+      ),
+      className: "min-w-[180px]"
+    },
+    {
+      header: "Order Date",
+      accessor: (o: OrderWithProduction) => o.order_date ? new Date(o.order_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: OrderWithProduction) => o.order_date,
+      className: "whitespace-nowrap",
+    },
+    {
+      header: "TAT Date",
+      accessor: (o: OrderWithProduction) => o.tat_date ? new Date(o.tat_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: OrderWithProduction) => o.tat_date,
+      className: "whitespace-nowrap text-blue-600 font-medium",
+    },
+    {
+      header: "Target Delv",
+      accessor: (o: OrderWithProduction) => o.target_delivery_date ? new Date(o.target_delivery_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: OrderWithProduction) => o.target_delivery_date,
+      className: "whitespace-nowrap",
+    },
+    {
+      header: "Dispatch Date",
+      accessor: (o: OrderWithProduction) => o.dispatch_date ? new Date(o.dispatch_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: OrderWithProduction) => o.dispatch_date,
+      className: "whitespace-nowrap text-emerald-600 font-medium",
+    },
+    {
+      header: "Managed By",
+      accessor: (o: OrderWithProduction) => <span className="text-[#5c6e82]">{o.dealer_name}</span>,
+    },
+    {
+      header: "Quote & SO",
+      accessor: (o: OrderWithProduction) => (
+        <div className="flex flex-col text-[#5c6e82]">
+          <span>{o.quote_no || "—"}</span>
+          <span className="text-[10px] text-muted-foreground">{o.sales_order_no || "—"}</span>
+        </div>
+      ),
+    },
+    {
+      header: "Qty",
+      accessor: (o: OrderWithProduction) => <span className="text-[#5c6e82] font-semibold whitespace-nowrap">{avlToWork(o)} / {o.total_windows}</span>,
+      className: "whitespace-nowrap",
+    },
+    {
+      header: "Materials Check",
+      accessor: (o: OrderWithProduction) => {
+        const getStatusColor = (status: string) => {
+          if (status === "Delivered" || status === "In Stock / Available" || status === "Not Required") return "text-emerald-600";
+          if (status === "PO Placed" || status === "Sent to Coating" || status === "Partially Available") return "text-amber-600";
+          return "text-destructive";
+        };
+
+        return (
+          <div className="flex flex-col gap-0.5 min-w-[140px] text-[10px] uppercase font-semibold">
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground w-10 text-[9px]">HDW:</span>
+              <span className={getStatusColor(o.hardware_availability)}>{o.hardware_availability || "Pending"}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground w-10 text-[9px]">EXT:</span>
+              <span className={getStatusColor(o.extrusion_availability)}>{o.extrusion_availability || "Pending"}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground w-10 text-[9px]">GLS:</span>
+              <span className={getStatusColor(o.glass_availability)}>{o.glass_availability || "Pending"}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground w-10 text-[9px]">COT:</span>
+              <span className={getStatusColor(o.coated_extrusion_availability)}>{o.coated_extrusion_availability || "Pending"}</span>
+            </div>
+          </div>
+        );
+      },
+    },
+    ...STAGES.map((s) => ({
+      header: s,
+      accessor: (o: OrderWithProduction) => {
+        const atw = avlToWork(o);
+        const val = o.stageTotals[s] || 0;
+        return <span className={cn("text-[#5c6e82] font-semibold", val >= atw && atw > 0 && "text-emerald-600")}>{val}</span>;
+      },
+      className: "text-center w-20"
+    })),
+    {
+      header: "Overall",
+      accessor: (o: OrderWithProduction) => {
+        const progress = overallProgress(o);
+        return (
+          <div className="flex items-center gap-2 min-w-[80px]">
+            <Progress value={progress} className="h-1.5 flex-1" />
+            <span className="text-[10px] font-semibold text-muted-foreground w-6">{progress}%</span>
+          </div>
+        );
+      },
+    }
+  ];
+
+  const tabsConfig = [
+    { id: "ready", label: "Ready for Production" },
+    { id: "in_production", label: "In Production" },
+    { id: "partially_packed", label: "Partially Packed" },
+    { id: "completely_packed", label: "Completely Packed" },
+    { id: "all", label: "All Orders" },
+  ];
+
+  const renderTopRightActions = () => (
+    <Button variant="outline" size="sm" className="h-8 text-blue-600 border-blue-200 bg-white gap-1 hover:bg-blue-50/50 -ml-1 mr-2">
+      <Plus className="h-4 w-4" /> New Log
+    </Button>
   );
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Production Dashboard</h1>
-          <p className="text-sm text-muted-foreground">{orders.filter(o => o.approval_for_production === "Approved" && o.design_released_windows > 0).length} orders in production pipeline</p>
+    <div className="flex-1 w-full bg-[#f4f5f7] flex flex-col h-[calc(100vh-64px)] overflow-hidden">
+      
+      {/* Title & Cards Section */}
+      <div className="p-6 pb-2 shrink-0">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Production Dashboard</h1>
+            <p className="text-sm text-muted-foreground mt-1">{orders.filter(o => o.approval_for_production === "Approved" && o.design_released_windows > 0).length} active orders in pipeline</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-4">
+          {STAGES.map((stage) => {
+            const allOrders = orders.filter(o => o.approval_for_production === "Approved" && o.design_released_windows > 0);
+            const totalCompleted = allOrders.reduce((sum, o) => sum + (o.stageTotals[stage] || 0), 0);
+            const totalAtw = allOrders.reduce((sum, o) => sum + avlToWork(o), 0);
+            return (
+              <Card key={stage} className="border-0 shadow-sm bg-white rounded-xl overflow-hidden">
+                <CardContent className="p-5 flex flex-col justify-center">
+                  <p className="text-xs font-semibold text-[#5c6e82] uppercase mb-1">{stage}</p>
+                  <div className="flex items-baseline gap-2 text-slate-900">
+                    <span className="text-2xl font-bold tracking-tight">{totalCompleted}</span>
+                    <span className="text-sm font-medium text-muted-foreground">/ {totalAtw}</span>
+                  </div>
+                  <Progress value={totalAtw > 0 ? (totalCompleted / totalAtw) * 100 : 0} className="h-1 mt-3 opacty-50" />
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-        {STAGES.map((stage) => {
-          const allOrders = orders.filter(o => o.approval_for_production === "Approved" && o.design_released_windows > 0);
-          const totalCompleted = allOrders.reduce((sum, o) => sum + (o.stageTotals[stage] || 0), 0);
-          const totalAtw = allOrders.reduce((sum, o) => sum + avlToWork(o), 0);
-          return (
-            <Card key={stage}>
-              <CardContent className="pt-4 pb-3 px-4">
-                <p className="text-xs text-muted-foreground">{stage}</p>
-                <p className="text-lg font-semibold">{totalCompleted} / {totalAtw}</p>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-
-      <Tabs defaultValue="all">
-        <div className="flex items-center justify-between mb-4">
-          <TabsList>
-            <TabsTrigger value="ready">Ready for Production</TabsTrigger>
-            <TabsTrigger value="in_production">In Production</TabsTrigger>
-            <TabsTrigger value="partially_packed">Partially Packed</TabsTrigger>
-            <TabsTrigger value="completely_packed">Completely Packed</TabsTrigger>
-            <TabsTrigger value="all">All Orders</TabsTrigger>
-          </TabsList>
-          <TabsContent value="ready" className="m-0">
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => handleExport("ready")}>
-              <Download className="h-4 w-4" /> Export
-            </Button>
-          </TabsContent>
-          <TabsContent value="in_production" className="m-0">
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => handleExport("in_production")}>
-              <Download className="h-4 w-4" /> Export
-            </Button>
-          </TabsContent>
-          <TabsContent value="partially_packed" className="m-0">
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => handleExport("partially_packed")}>
-              <Download className="h-4 w-4" /> Export
-            </Button>
-          </TabsContent>
-          <TabsContent value="completely_packed" className="m-0">
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => handleExport("completely_packed")}>
-              <Download className="h-4 w-4" /> Export
-            </Button>
-          </TabsContent>
-          <TabsContent value="all" className="m-0">
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => handleExport("all")}>
-              <Download className="h-4 w-4" /> Export
-            </Button>
-          </TabsContent>
+      {/* Datatable Section */}
+      <div className="flex-1 px-6 pb-6 min-h-0 flex flex-col">
+        <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200/60 overflow-hidden flex flex-col">
+          <DataTableLayout
+            moduleName="production"
+            tabs={tabsConfig}
+            activeTab={tab}
+            onTabChange={setTab}
+            searchValue={search}
+            onSearch={setSearch}
+            activeFilterCount={activeFilterCount}
+            activeFilters={activeFilters}
+            onRemoveFilter={(key) => setFilters(prev => ({ ...prev, [key]: "" }))}
+            onClearFilters={() => setFilters(emptyFilters)}
+            columns={columns}
+            data={filtered}
+            getRowId={(o) => o.id}
+            onExport={() => handleExport(tab)}
+            renderTopRightActions={renderTopRightActions}
+            filterChildren={
+              <div className="space-y-4">
+                <FilterSelect label="Salesperson" value={filters.salesperson} options={salespersons} onChange={(v) => setFilters(p => ({ ...p, salesperson: v }))} />
+                <FilterSelect label="Order Owner" value={filters.orderOwner} options={owners} onChange={(v) => setFilters(p => ({ ...p, orderOwner: v }))} />
+              </div>
+            }
+          />
         </div>
-        <TabsContent value="ready" className="mt-0">{renderTable(getFilteredOrders("ready"))}</TabsContent>
-        <TabsContent value="in_production" className="mt-0">{renderTable(getFilteredOrders("in_production"))}</TabsContent>
-        <TabsContent value="partially_packed" className="mt-0">{renderTable(getFilteredOrders("partially_packed"))}</TabsContent>
-        <TabsContent value="completely_packed" className="mt-0">{renderTable(getFilteredOrders("completely_packed"))}</TabsContent>
-        <TabsContent value="all" className="mt-0">{renderTable(getFilteredOrders("all"))}</TabsContent>
-      </Tabs>
+      </div>
+    </div>
+  );
+}
+
+function FilterSelect({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
+  return (
+    <div className="space-y-1">
+      <label className="text-xs text-muted-foreground uppercase font-semibold">{label}</label>
+      <Select value={value || "all"} onValueChange={(v) => onChange(v === "all" ? "" : v)}>
+        <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All</SelectItem>
+          {options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

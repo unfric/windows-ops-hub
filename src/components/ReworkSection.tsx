@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import OrderActivityLog from "./OrderActivityLog";
@@ -92,6 +92,17 @@ export default function ReworkSection({ orderId, order, onRefresh, readOnly }: R
     }
   };
 
+  const handleDeleteRework = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this rework entry?")) return;
+    try {
+      await api.orders.deleteLog("rework_logs", id);
+      toast.success("Entry deleted");
+      onRefresh();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
+  };
+
   const statusColor = (s: string) => {
     switch (s) {
       case "Pending": return "bg-warning/15 text-warning border-warning/20";
@@ -148,6 +159,7 @@ export default function ReworkSection({ orderId, order, onRefresh, readOnly }: R
                   <TableHead>Solution / Fix</TableHead>
                   <TableHead className="text-right w-24">Cost</TableHead>
                   <TableHead className="w-32">Status</TableHead>
+                  {!readOnly && <TableHead className="w-10"></TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -206,6 +218,18 @@ export default function ReworkSection({ orderId, order, onRefresh, readOnly }: R
                         </SelectContent>
                       </Select>
                     </TableCell>
+                    {!readOnly && (
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive"
+                          onClick={() => handleDeleteRework(log.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>

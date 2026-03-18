@@ -1,11 +1,12 @@
-import { verifyUser } from "../_shared/auth.ts";
+import { verifyUser, getSupabaseAdmin } from "../_shared/auth.ts";
 import { jsonResponse, errorResponse } from "../_shared/response.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 
 /**
  * Handles all order-related operations.
  */
-Deno.serve(async (req) => {
+// @ts-ignore
+Deno.serve(async (req: Request) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -19,26 +20,27 @@ Deno.serve(async (req) => {
     const { supabase } = authResult;
 
     const { action, ...payload } = await req.json();
+    const supabaseAdmin = getSupabaseAdmin();
 
     switch (action) {
       case "list":
-        return await handleList(supabase);
+        return await handleList(supabaseAdmin);
       case "get":
-        return await handleGet(supabase, payload.id);
+        return await handleGet(supabaseAdmin, payload.id);
       case "create":
-        return await handleCreate(supabase, payload.data);
+        return await handleCreate(supabaseAdmin, payload.data, authResult.user);
       case "update":
-        return await handleUpdate(supabase, payload.id, payload.data);
+        return await handleUpdate(supabaseAdmin, payload.id, payload.data, authResult.user);
       case "update-field":
-        return await handleUpdateField(supabase, payload.id, payload.field, payload.value, payload.module, authResult.user);
+        return await handleUpdateField(supabaseAdmin, payload.id, payload.field, payload.value, payload.module, authResult.user);
       case "add-log":
-        return await handleAddLog(supabase, payload.table, payload.data, authResult.user);
+        return await handleAddLog(supabaseAdmin, payload.table, payload.data, authResult.user);
       case "update-log":
-        return await handleUpdateLog(supabase, payload.table, payload.id, payload.data, authResult.user);
+        return await handleUpdateLog(supabaseAdmin, payload.table, payload.id, payload.data, authResult.user);
       case "delete-log":
-        return await handleDeleteLog(supabase, payload.table, payload.id, authResult.user);
+        return await handleDeleteLog(supabaseAdmin, payload.table, payload.id, authResult.user);
       case "delete":
-        return await handleDelete(supabase, payload.id);
+        return await handleDelete(supabaseAdmin, payload.id);
       default:
         return errorResponse(`Action '${action}' not found`, 404);
     }
@@ -121,7 +123,10 @@ async function handleUpdateField(supabase: any, id: string, field: string, value
   // 2. Perform update
   const { error: updateErr } = await supabase
     .from("orders")
-    .update({ [field]: value })
+    .update({ 
+      [field]: value,
+      updated_by: user.id 
+    })
     .eq("id", id);
   
   if (updateErr) return errorResponse(updateErr);
@@ -130,7 +135,8 @@ async function handleUpdateField(supabase: any, id: string, field: string, value
   const oldValStr = oldValue != null ? String(oldValue) : null;
   const newValStr = value != null ? String(value) : null;
 
-  await Promise.all([
+  // Insert into audit logs and sync advance if needed
+  const promises: Promise<any>[] = [
     supabase.from("audit_log").insert({
       entity_type: "orders",
       entity_id: id,
@@ -148,7 +154,13 @@ async function handleUpdateField(supabase: any, id: string, field: string, value
       updated_by: user.id,
       timestamp: new Date().toISOString()
     })
-  ]);
+  ];
+
+  if (field === "advance_received") {
+    promises.push(syncAdvanceReceived(supabase, id, Number(oldValue) || 0, Number(value) || 0, user.id));
+  }
+
+  await Promise.all(promises);
 
   return jsonResponse({ success: true, oldValue, newValue: value });
 }
@@ -156,8 +168,16 @@ async function handleUpdateField(supabase: any, id: string, field: string, value
 async function handleAddLog(supabase: any, table: string, data: any, user: any) {
   if (!table || !data) return errorResponse("Table and Data are required");
   
-  // Inject user_id if not present and table supports it
-  const logData = { ...data, updated_by: data.updated_by || user.id };
+  // Inject user_id into correct columns based on table
+  const logData = { ...data };
+  if (!logData.updated_by && !logData.entered_by) {
+    // If it's a log table, use entered_by. If it's an audit table, use updated_by.
+    if (table.endsWith("_logs") || table === "dispatch" || table === "installation") {
+      logData.entered_by = user.id;
+    } else {
+      logData.updated_by = user.id;
+    }
+  }
 
   const { data: result, error } = await supabase
     .from(table)
@@ -195,79 +215,112 @@ async function handleDeleteLog(supabase: any, table: string, id: string, _user: 
   return jsonResponse({ success: true });
 }
 
-async function handleCreate(supabase: any, data: any) {
+async function handleCreate(supabase: any, data: any, user: any) {
   if (!data) return errorResponse("Data is required");
 
   const { data: result, error } = await supabase
     .from("orders")
-    .insert(data)
+    .insert({ 
+      ...data, 
+      created_by: user.id,
+      updated_by: user.id
+    })
     .select()
     .single();
 
   if (error) return errorResponse(error);
+
+  if (result.advance_received > 0) {
+    await syncAdvanceReceived(supabase, result.id, 0, result.advance_received, user.id);
+  }
+
   return jsonResponse(result, 201);
 }
 
-async function handleUpdate(supabase: any, id: string, data: any) {
+async function handleUpdate(supabase: any, id: string, data: any, user: any) {
   if (!id) return errorResponse("Order ID is required");
   if (!data) return errorResponse("Data is required");
 
   delete data.id;
   delete data.created_at;
 
+  // Fetch old order to safely compare advance_received
+  const { data: oldOrder } = await supabase.from("orders").select("advance_received").eq("id", id).maybeSingle();
+
   const { data: result, error } = await supabase
     .from("orders")
-    .update(data)
+    .update({ 
+      ...data, 
+      updated_by: user.id 
+    })
     .eq("id", id)
     .select()
     .single();
 
   if (error) return errorResponse(error);
+
+  const oldAdvance = oldOrder ? Number(oldOrder.advance_received) || 0 : 0;
+  const newAdvance = Number(result.advance_received) || 0;
+  
+  if (oldAdvance !== newAdvance) {
+    await syncAdvanceReceived(supabase, id, oldAdvance, newAdvance, user.id);
+  }
+
   return jsonResponse(result);
+}
+
+// Internal sync helper
+async function syncAdvanceReceived(supabase: any, orderId: string, oldAdvance: number, newAdvance: number, userId: string) {
+  if (newAdvance > 0 && newAdvance !== oldAdvance) {
+    await supabase.from("payment_logs").insert({
+      order_id: orderId,
+      amount: newAdvance,
+      source_module: "Sales",
+      status: "Draft",
+      entered_by: userId,
+      payment_date: new Date().toISOString().split("T")[0]
+    });
+  }
 }
 
 async function handleDelete(supabase: any, id: string) {
   if (!id) return errorResponse("Order ID is required");
 
-  // 1. Fetch order and check for progress fields
+  // 1. Fetch order info
   const { data: order, error: fetchErr } = await supabase
     .from("orders")
-    .select("order_name, survey_done_windows, design_released_windows")
+    .select("order_name")
     .eq("id", id)
     .single();
 
   if (fetchErr) return errorResponse(fetchErr);
 
-  if ((order.survey_done_windows || 0) > 0) {
-    return errorResponse(`Cannot delete '${order.order_name}' because Survey progress has been recorded (${order.survey_done_windows} windows).`, 400);
+  // 2. Only block deletion if there are CONFIRMED payments (financial record)
+  const { data: confirmedPayments } = await supabase
+    .from("payment_logs")
+    .select("id")
+    .eq("order_id", id)
+    .eq("status", "Confirmed")
+    .limit(1);
+
+  if (confirmedPayments && confirmedPayments.length > 0) {
+    return errorResponse(
+      `Cannot delete '${order.order_name}' because it has confirmed payments. Please reverse all confirmed payments before deleting.`,
+      400
+    );
   }
 
-  if ((order.design_released_windows || 0) > 0) {
-    return errorResponse(`Cannot delete '${order.order_name}' because Design has already been released (${order.design_released_windows} windows).`, 400);
-  }
-
-  // 2. Check for related logs in other tables
-  const [payments, production, dispatch, installation] = await Promise.all([
-    supabase.from("payment_logs").select("id").eq("order_id", id).eq("status", "Confirmed").limit(1),
-    supabase.from("production_logs").select("id").eq("order_id", id).limit(1),
-    supabase.from("dispatch_logs").select("id").eq("order_id", id).limit(1),
-    supabase.from("installation_logs").select("id").eq("order_id", id).limit(1),
+  // 3. Delete all child logs (cascade cleanup)
+  await Promise.all([
+    supabase.from("production_logs").delete().eq("order_id", id),
+    supabase.from("dispatch_logs").delete().eq("order_id", id),
+    supabase.from("installation_logs").delete().eq("order_id", id),
+    supabase.from("rework_logs").delete().eq("order_id", id),
+    supabase.from("payment_logs").delete().eq("order_id", id), // deletes draft/pending payments
+    supabase.from("order_activity_log").delete().eq("order_id", id),
   ]);
 
-  if (payments.data && payments.data.length > 0) {
-    return errorResponse("Cannot delete an order that has confirmed payments. Delete or reverse payments first.", 400);
-  }
-  if (production.data && production.data.length > 0) {
-    return errorResponse("Cannot delete an order that has production logs. Business has already started manufacturing.", 400);
-  }
-  if (dispatch.data && dispatch.data.length > 0) {
-    return errorResponse("Cannot delete an order that has been partially or fully dispatched.", 400);
-  }
-  if (installation.data && installation.data.length > 0) {
-    return errorResponse("Cannot delete an order that has installation logs recorded.", 400);
-  }
-
-  // If all checks pass, proceed with deletion
+  // 4. Delete the order itself
   const { error } = await supabase
     .from("orders")
     .delete()
@@ -275,7 +328,7 @@ async function handleDelete(supabase: any, id: string) {
 
   if (error) return errorResponse(error);
 
-  // Polymorphic cleanup (Audit logs don't have FK Cascades)
+  // 5. Cleanup audit logs
   await supabase
     .from("audit_log")
     .delete()

@@ -40,7 +40,12 @@ export default function CreateOrderDialog({ open, onOpenChange, onCreated }: Cre
   const [advanceReceived, setAdvanceReceived] = useState(false);
   const [advanceAmount, setAdvanceAmount] = useState("");
   const [commercialStatus, setCommercialStatus] = useState("");
+  const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
   const [submitting, setSubmitting] = useState(false);
+  
+  const [tatDate, setTatDate] = useState("");
+  const [targetDeliveryDate, setTargetDeliveryDate] = useState("");
+  const [tatConfig, setTatConfig] = useState<any[]>([]);
 
   // Settings data
   const [projectNames, setProjectNames] = useState<SettingsItem[]>([]);
@@ -50,6 +55,8 @@ export default function CreateOrderDialog({ open, onOpenChange, onCreated }: Cre
   const [salespersons, setSalespersons] = useState<SettingsItem[]>([]);
   const [products, setProducts] = useState<SettingsItem[]>([]);
   const [commercialStatuses, setCommercialStatuses] = useState<SettingsItem[]>([]);
+
+  const [appSettings, setAppSettings] = useState<any[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -64,6 +71,7 @@ export default function CreateOrderDialog({ open, onOpenChange, onCreated }: Cre
           setSalespersons(settings.salespersons || []);
           setProducts(settings.other_product_types || []);
           setCommercialStatuses(settings.commercial_statuses || []);
+          setAppSettings(settings.app_settings || []);
         }
       } catch (err) {
         console.error("Error fetching settings:", err);
@@ -92,7 +100,22 @@ export default function CreateOrderDialog({ open, onOpenChange, onCreated }: Cre
     setAdvanceReceived(false);
     setAdvanceAmount("");
     setCommercialStatus("");
+    setOrderDate(new Date().toISOString().split('T')[0]);
+    setTatDate("");
+    setTargetDeliveryDate("");
   };
+
+  useEffect(() => {
+    if (!orderDate) return;
+    
+    // Default TAT calculation: Setting from DB or 30 days
+    const defaultDays = Number(appSettings.find(s => s.key === "default_tat_days")?.value) || 30;
+    const date = new Date(orderDate);
+    date.setDate(date.getDate() + defaultDays);
+    const dateStr = date.toISOString().split('T')[0];
+    setTatDate(dateStr);
+    setTargetDeliveryDate(dateStr);
+  }, [orderDate, appSettings]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -118,6 +141,19 @@ export default function CreateOrderDialog({ open, onOpenChange, onCreated }: Cre
         order_value: Number(orderValue) || 0,
         advance_received: advanceReceived ? Number(advanceAmount) || 0 : 0,
         commercial_status: commercialStatus || "Pipeline",
+        order_date: orderDate || new Date().toISOString().split('T')[0],
+        tat_date: tatDate || null,
+        target_delivery_date: targetDeliveryDate || null,
+        // Default material statuses — store will show real actionable status, not blank
+        hardware_availability: "Pending PO",
+        extrusion_availability: "Pending PO",
+        glass_availability: "Pending PO",
+        coated_extrusion_availability: "Pending Coating",
+        // Mirror to procurement fields
+        hardware_po_status: "Pending PO",
+        extrusion_po_status: "Pending PO",
+        glass_po_status: "Pending PO",
+        coating_status: "Pending Coating",
       };
 
       const result = await api.orders.create(payload);
@@ -157,6 +193,11 @@ export default function CreateOrderDialog({ open, onOpenChange, onCreated }: Cre
                     <span className="text-sm">Project</span>
                   </label>
                 </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Order Date</Label>
+                <Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} required />
               </div>
 
               <div className="space-y-1.5">
@@ -234,6 +275,8 @@ export default function CreateOrderDialog({ open, onOpenChange, onCreated }: Cre
                   </SelectContent>
                 </Select>
               </div>
+
+
             </div>
 
             {/* RIGHT COLUMN */}

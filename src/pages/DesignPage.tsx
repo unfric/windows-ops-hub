@@ -17,6 +17,8 @@ import {
 import { Search, Filter, X, Download } from "lucide-react";
 import { toast } from "sonner";
 import { exportDataToExcel } from "@/lib/excelUtils";
+import DataTableLayout from "@/components/ui/data-table-layout";
+import { cn } from "@/lib/utils";
 
 interface Order {
   id: string;
@@ -35,6 +37,10 @@ interface Order {
   design_released_windows: number;
   design_remarks: string | null;
   approval_for_production: string;
+  order_date: string | null;
+  tat_date: string | null;
+  target_delivery_date: string | null;
+  dispatch_date: string | null;
 }
 
 interface Filters {
@@ -107,14 +113,32 @@ export default function DesignPage() {
     return true;
   });
 
-  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+  const activeFilters = Object.entries(filters)
+    .filter(([_, v]) => v)
+    .map(([k, v]) => ({
+      key: k,
+      label: k === "orderOwner" ? "Owner" : 
+             k === "approvalProduction" ? "Prod Appr" : 
+             k.charAt(0).toUpperCase() + k.slice(1),
+      value: v
+    }));
+
+  const activeFilterCount = activeFilters.length;
 
   const handleExport = () => {
-    const headers = ["Order", "Owner", "Salesperson", "Survey Win", "Design Win", "Remarks", "Prod Appr"];
+    const headers = [
+      "Order", "Owner", "Salesperson", 
+      "Order Date", "TAT Date", "Target Delv", "Disp Date",
+      "Survey Win", "Design Win", "Remarks", "Prod Appr"
+    ];
     const data = filtered.map(o => ({
       "Order": o.order_name,
       "Owner": o.dealer_name,
       "Salesperson": o.salesperson || "",
+      "Order Date": o.order_date || "",
+      "TAT Date": o.tat_date || "",
+      "Target Delv": o.target_delivery_date || "",
+      "Disp Date": o.dispatch_date || "",
       "Survey Win": o.survey_done_windows,
       "Design Win": o.design_released_windows,
       "Remarks": o.design_remarks || "",
@@ -123,122 +147,131 @@ export default function DesignPage() {
     exportDataToExcel(data, headers, `design_export_${tab}.xlsx`);
   };
 
+  const columns = [
+    {
+      header: "Project Name",
+      accessor: (o: Order) => (
+        <div className="flex flex-col">
+          <Link to={`/orders/${o.id}`} className="font-medium text-blue-600 hover:underline">{o.order_name}</Link>
+          <span className="text-[10px] text-muted-foreground uppercase">{o.order_type}</span>
+        </div>
+      ),
+      className: "min-w-[180px]"
+    },
+    {
+      header: "Order Date",
+      accessor: (o: Order) => o.order_date ? new Date(o.order_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: Order) => o.order_date,
+      className: "whitespace-nowrap",
+    },
+    {
+      header: "TAT Date",
+      accessor: (o: Order) => o.tat_date ? new Date(o.tat_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: Order) => o.tat_date,
+      className: "whitespace-nowrap text-blue-600 font-medium",
+    },
+    {
+      header: "Target Delv",
+      accessor: (o: Order) => o.target_delivery_date ? new Date(o.target_delivery_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: Order) => o.target_delivery_date,
+      className: "whitespace-nowrap",
+    },
+    {
+      header: "Dispatch Date",
+      accessor: (o: Order) => o.dispatch_date ? new Date(o.dispatch_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: Order) => o.dispatch_date,
+      className: "whitespace-nowrap text-emerald-600 font-medium",
+    },
+    {
+      header: "Managed By",
+      accessor: (o: Order) => <span className="text-[#5c6e82]">{o.dealer_name}</span>,
+    },
+    {
+      header: "Salesperson",
+      accessor: (o: Order) => <span className="text-[#5c6e82]">{o.salesperson || "—"}</span>,
+    },
+    {
+      header: "Shade",
+      accessor: (o: Order) => <span className="text-[#5c6e82]">{o.colour_shade || "—"}</span>,
+    },
+    {
+      header: "Design Released",
+      accessor: (o: Order) => {
+        const released = o.design_released_windows || 0;
+        const total = o.total_windows;
+        return <span className={released >= total && total > 0 ? "text-emerald-600 font-medium whitespace-nowrap" : "text-[#5c6e82] font-medium whitespace-nowrap"}>{released} / {total}</span>;
+      },
+      className: "whitespace-nowrap",
+    },
+    {
+      header: "Release Pending",
+      accessor: (o: Order) => {
+        const surveyDone = o.survey_done_windows || 0;
+        const released = o.design_released_windows || 0;
+        const pending = Math.max(0, surveyDone - released);
+        return <span className={pending > 0 ? "text-amber-600 font-medium" : "text-[#5c6e82]"}>{pending > 0 ? `${pending} Win` : "—"}</span>;
+      },
+      className: "text-[#5c6e82]"
+    },
+    {
+      header: "Prod. Appr",
+      accessor: (o: Order) => (
+        <Badge variant="outline" className={cn("text-[10px] uppercase font-semibold", approvalColor(o.approval_for_production))}>
+          {o.approval_for_production}
+        </Badge>
+      ),
+    },
+    {
+      header: "Remarks",
+      accessor: (o: Order) => <span className="text-[#5c6e82] max-w-[150px] truncate block" title={o.design_remarks || ""}>{o.design_remarks || "—"}</span>,
+    }
+  ];
+
+  const tabsConfig = [
+    { id: "pending", label: "Pending Design" },
+    { id: "released", label: "Design Released" },
+    { id: "all", label: "All Orders" },
+  ];
+
+
+
   return (
-    <div className="p-6">
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Design</h1>
-          <p className="text-sm text-muted-foreground">{orders.length} total orders</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={handleExport}>
-            <Download className="h-4 w-4" /> Export
-          </Button>
-        </div>
-      </div>
-
-      <div className="mb-4 flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search by name, owner, quotation..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button size="sm" variant="outline" className="gap-1.5">
-              <Filter className="h-4 w-4" />
-              Filters
-              {activeFilterCount > 0 && (
-                <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs rounded-full">
-                  {activeFilterCount}
-                </Badge>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-72 space-y-3" align="start">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Filters</span>
-              {activeFilterCount > 0 && (
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setFilters(emptyFilters)}>
-                  <X className="h-3 w-3 mr-1" /> Clear
-                </Button>
-              )}
+    <div className="flex-1 w-full bg-white flex flex-col h-[calc(100vh-64px)]">
+      <DataTableLayout
+        moduleName="design"
+        title="Design"
+        tabs={tabsConfig}
+        activeTab={tab}
+        onTabChange={setTab}
+        searchValue={search}
+        onSearch={setSearch}
+        activeFilterCount={activeFilterCount}
+        activeFilters={activeFilters}
+        onRemoveFilter={(key) => setFilters(prev => ({ ...prev, [key]: "" }))}
+        onClearFilters={() => setFilters(emptyFilters)}
+        columns={columns}
+        data={filtered}
+        getRowId={(o) => o.id}
+        onExport={handleExport}
+        filterChildren={
+          <div className="space-y-4">
+            <FilterSelect label="Salesperson" value={filters.salesperson} options={salespersons} onChange={(v) => setFilters(p => ({ ...p, salesperson: v }))} />
+            <FilterSelect label="Order Owner" value={filters.orderOwner} options={owners} onChange={(v) => setFilters(p => ({ ...p, orderOwner: v }))} />
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground uppercase font-semibold">Prod. Approval</label>
+              <Select value={filters.approvalProduction || "all"} onValueChange={(v) => setFilters(p => ({ ...p, approvalProduction: v === "all" ? "" : v }))}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="Approved">Approved</SelectItem>
+                  <SelectItem value="Hold">Hold</SelectItem>
+                  <SelectItem value="Pending">Pending</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <FilterSelect label="Salesperson" value={filters.salesperson} options={salespersons} onChange={(v) => setFilters({ ...filters, salesperson: v })} />
-            <FilterSelect label="Order Owner" value={filters.orderOwner} options={owners} onChange={(v) => setFilters({ ...filters, orderOwner: v })} />
-            <FilterSelect label="Approved for Production" value={filters.approvalProduction} options={["Pending", "Approved", "Hold"]} onChange={(v) => setFilters({ ...filters, approvalProduction: v })} />
-          </PopoverContent>
-        </Popover>
-      </div>
-
-      <Tabs value={tab} onValueChange={setTab} className="mb-4">
-        <TabsList>
-          <TabsTrigger value="pending">Pending Design</TabsTrigger>
-          <TabsTrigger value="released">Design Released</TabsTrigger>
-          <TabsTrigger value="all">All Orders</TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      <div className="rounded-md border bg-card overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="min-w-[80px]">Type</TableHead>
-              <TableHead className="min-w-[140px]">Order Name</TableHead>
-              <TableHead className="min-w-[120px]">Owner</TableHead>
-              <TableHead className="min-w-[100px]">Quotation No</TableHead>
-              <TableHead className="min-w-[80px]">SO No</TableHead>
-              <TableHead className="min-w-[100px]">Shade</TableHead>
-              <TableHead className="min-w-[100px]">Salesperson</TableHead>
-              <TableHead className="min-w-[140px]">Product Type</TableHead>
-              <TableHead className="text-right min-w-[60px]">Windows</TableHead>
-              <TableHead className="text-right min-w-[60px]">Sqft</TableHead>
-              <TableHead className="text-right min-w-[90px]">Order Value</TableHead>
-              <TableHead className="text-right min-w-[100px]">Design Released</TableHead>
-              <TableHead className="text-right min-w-[110px]">Release Pending</TableHead>
-              <TableHead className="min-w-[120px]">Prod. Approval</TableHead>
-              <TableHead className="min-w-[120px]">Remarks</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow><TableCell colSpan={16} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
-            ) : filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={16} className="text-center py-8 text-muted-foreground">No orders found</TableCell></TableRow>
-            ) : (
-              filtered.map((order) => {
-                const surveyDone = order.survey_done_windows || 0;
-                const released = order.design_released_windows || 0;
-                const releasePending = Math.max(0, surveyDone - released);
-                return (
-                  <TableRow key={order.id} className="hover:bg-muted/50">
-                    <TableCell><Badge variant="outline" className="text-xs">{order.order_type}</Badge></TableCell>
-                    <TableCell>
-                      <Link to={`/orders/${order.id}`} className="font-medium text-primary hover:underline">{order.order_name}</Link>
-                    </TableCell>
-                    <TableCell className="text-sm">{order.dealer_name}</TableCell>
-                    <TableCell className="text-sm">{order.quote_no || "—"}</TableCell>
-                    <TableCell className="text-sm">{order.sales_order_no || "—"}</TableCell>
-                    <TableCell className="text-sm">{order.colour_shade || "—"}</TableCell>
-                    <TableCell className="text-sm">{order.salesperson || "—"}</TableCell>
-                    <TableCell className="text-sm max-w-[180px] truncate" title={order.product_type}>{order.product_type}</TableCell>
-                    <TableCell className="text-right">{order.total_windows}</TableCell>
-                    <TableCell className="text-right">{Number(order.sqft).toFixed(1)}</TableCell>
-                    <TableCell className="text-right font-medium">₹{Number(order.order_value).toLocaleString()}</TableCell>
-                    <TableCell className="text-right font-medium">{released}</TableCell>
-                    <TableCell className="text-right">{releasePending > 0 ? releasePending : "—"}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={approvalColor(order.approval_for_production)}>
-                        {order.approval_for_production}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm max-w-[120px] truncate" title={order.design_remarks || ""}>{order.design_remarks || "—"}</TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
+          </div>
+        }
+      />
     </div>
   );
 }

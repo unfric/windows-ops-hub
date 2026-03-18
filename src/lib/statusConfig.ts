@@ -1,5 +1,5 @@
 export const STATUS_OPTIONS = {
-  commercial_status: ["Pipeline", "Order Confirmed"],
+  commercial_status: ["Pipeline", "Confirmed", "Hold", "Cancelled"],
   finance_status: ["Pending Approval", "Advance Received", "Deviation Approved", "Finance Approved"],
   survey_status: ["Pending", "Completed"],
   design_status: ["Pending", "Released"],

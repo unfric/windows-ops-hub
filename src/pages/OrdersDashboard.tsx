@@ -18,7 +18,9 @@ import { toast } from "sonner";
 import { importOrdersFromFile, exportOrdersToExcel, downloadImportTemplate } from "@/lib/excelUtils";
 import CreateOrderDialog from "@/components/CreateOrderDialog";
 import EditOrderDialog from "@/components/EditOrderDialog";
+import DataTableLayout from "@/components/ui/data-table-layout";
 import { useUserRoles } from "@/hooks/useUserRoles";
+import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 
 // ── Types ──
@@ -57,7 +59,13 @@ interface Order {
   coating_status: string;
   coating_delivery_date: string | null;
   approval_for_production: string;
-  approval_for_dispatch: string;
+  windows_packed: number;
+  windows_dispatched: number;
+  windows_installed: number;
+  order_date: string | null;
+  tat_date: string | null;
+  target_delivery_date: string | null;
+  dispatch_date: string | null;
   created_at: string;
 }
 
@@ -231,14 +239,16 @@ function ReworkDot({ open, total }: { open: number; total: number }) {
 // ── Filters ──
 
 interface Filters {
-  salesperson: string;
-  orderOwner: string;
   orderType: string;
-  approvalProduction: string;
+  dealStage: string;
+  managedBy: string;
+  nextAction: string;
+  materialsStatus: string;
+  dispatchLabel: string;
 }
 
 const emptyFilters: Filters = {
-  salesperson: "", orderOwner: "", orderType: "", approvalProduction: "",
+  orderType: "", dealStage: "", managedBy: "", nextAction: "", materialsStatus: "", dispatchLabel: ""
 };
 
 // ── Component ──
@@ -256,15 +266,14 @@ export default function OrdersDashboard() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { hasRole } = useUserRoles();
 
-  const [salespersons, setSalespersons] = useState<string[]>([]);
-  const [owners, setOwners] = useState<string[]>([]);
+
 
   const canEdit = hasRole("sales") || hasRole("admin") || hasRole("management");
 
   const fetchAll = async () => {
     try {
       const data = await api.orders.list();
-      
+
       const rawOrders = (data.orders || []) as unknown as Order[];
       setOrders(rawOrders);
 
@@ -305,9 +314,9 @@ export default function OrdersDashboard() {
       // Aggregate
       const agg: AggregatedOrder[] = rawOrders.map((o) => {
         const receipt = paymentMap[o.id] || 0;
-        const packed = packedMap[o.id] || 0;
-        const dispatched = dispatchMap[o.id] || 0;
-        const installed = installMap[o.id] || 0;
+        const packed = (packedMap[o.id] || 0) + (Number(o.windows_packed) || 0);
+        const dispatched = (dispatchMap[o.id] || 0) + (Number(o.windows_dispatched) || 0);
+        const installed = (installMap[o.id] || 0) + (Number(o.windows_installed) || 0);
         const openRework = reworkOpenMap[o.id] || 0;
         const totalRework = reworkTotalMap[o.id] || 0;
         const atw = o.design_released_windows || 0;
@@ -341,20 +350,10 @@ export default function OrdersDashboard() {
     }
   };
 
-  const fetchFilterOptions = async () => {
-    try {
-      const settings = await api.settings.list();
-      if (settings) {
-        setSalespersons(settings.salespersons?.map((s: any) => s.name) || []);
-      }
-      setOwners([...new Set(orders.map((o) => o.dealer_name).filter(Boolean))].sort());
-    } catch (err) {
-      console.error("Error fetching filter options:", err);
-    }
-  };
+  const owners = Array.from(new Set(orders.map((o) => o.dealer_name).filter(Boolean))).sort() as string[];
+  const nextActions = Array.from(new Set(aggregated.map((o) => o.nextAction).filter(Boolean))).sort() as string[];
 
   useEffect(() => { fetchAll(); }, []);
-  useEffect(() => { if (orders.length > 0) fetchFilterOptions(); }, [orders.length]);
 
   // Tab filtering
   const tabFiltered = aggregated.filter((o) => {
@@ -375,26 +374,65 @@ export default function OrdersDashboard() {
         (o.sales_order_no || "").toLowerCase().includes(s);
       if (!matches) return false;
     }
-    if (filters.salesperson && o.salesperson !== filters.salesperson) return false;
-    if (filters.orderOwner && o.dealer_name !== filters.orderOwner) return false;
     if (filters.orderType && o.order_type !== filters.orderType) return false;
-    if (filters.approvalProduction && o.approval_for_production !== filters.approvalProduction) return false;
+    if (filters.dealStage && o.commercial_status !== filters.dealStage) return false;
+    if (filters.managedBy && o.dealer_name !== filters.managedBy) return false;
+    if (filters.nextAction && o.nextAction !== filters.nextAction) return false;
+    if (filters.materialsStatus && o.materialsStatus !== filters.materialsStatus) return false;
+    if (filters.dispatchLabel && o.dispatchLabel !== filters.dispatchLabel) return false;
     return true;
   });
 
-  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+  const activeFilters = Object.entries(filters)
+    .filter(([_, v]) => v)
+    .map(([k, v]) => ({
+      key: k,
+      label: k === "orderType" ? "Type" : 
+             k === "dealStage" ? "Deal Stage" : 
+             k === "managedBy" ? "Managed By" :
+             k === "nextAction" ? "Next Action" :
+             k === "materialsStatus" ? "Materials" :
+             k === "dispatchLabel" ? "Dispatch" :
+             k.charAt(0).toUpperCase() + k.slice(1),
+      value: v
+    }));
+
+  const activeFilterCount = activeFilters.length;
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setImporting(true);
+    
+    const toastId = toast.loading("Starting import...");
+    
     try {
-      const result = await importOrdersFromFile(file);
-      toast.success(`Import: ${result.created} created, ${result.updated} updated`);
-      if (result.errors.length > 0) result.errors.forEach((err) => toast.error(err));
+      const result = await importOrdersFromFile(file, (curr, total) => {
+        toast.loading(`Importing orders: ${curr} of ${total} processed...`, { id: toastId });
+      });
+
+      toast.success(
+        <div className="flex flex-col gap-1">
+          <span className="font-bold">Import Completed</span>
+          <div className="text-xs space-y-0.5">
+            <p className="text-emerald-600">✓ {result.created} new orders created</p>
+            <p className="text-blue-600">i {result.updated} existing orders updated</p>
+            {result.errors.length > 0 && (
+              <p className="text-red-500">⚠ {result.errors.length} rows had errors</p>
+            )}
+          </div>
+        </div>,
+        { id: toastId, duration: 5000 }
+      );
+
+      if (result.errors.length > 0) {
+        // Log errors to console so user can see details if needed
+        console.warn("Import Errors:", result.errors);
+      }
+      
       fetchAll();
     } catch (err: any) {
-      toast.error("Import failed: " + err.message);
+      toast.error("Import failed: " + err.message, { id: toastId });
     } finally {
       setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -402,202 +440,247 @@ export default function OrdersDashboard() {
   };
 
   const handleExportFull = async () => {
-    // This uses the updated exportOrdersToExcel that includes all fields
+    // This uses the updated exportOrdersToExcel that includes all fields and syncs counts
     const paymentMap: Record<string, number> = {};
-    aggregated.forEach(a => paymentMap[a.id] = a.receipt);
-    await exportOrdersToExcel(orders as any, paymentMap);
+    const pMap: Record<string, number> = {};
+    const dMap: Record<string, number> = {};
+    const iMap: Record<string, number> = {};
+    
+    aggregated.forEach(a => {
+      paymentMap[a.id] = a.receipt;
+      pMap[a.id] = a.productionPacked;
+      dMap[a.id] = a.dispatchedWindows;
+      iMap[a.id] = a.installedWindows;
+    });
+    await exportOrdersToExcel(orders as any, paymentMap, pMap, dMap, iMap);
   };
 
+  const columns = [
+    {
+      header: "Project Name",
+      accessor: (o: AggregatedOrder) => (
+        <div className="flex flex-col">
+          <Link to={`/orders/${o.id}`} className="font-medium text-blue-600 hover:underline">{o.order_name}</Link>
+          <span className="text-[10px] text-muted-foreground uppercase">{o.order_type}</span>
+        </div>
+      ),
+      className: "min-w-[180px]"
+    },
+    {
+      header: "Managed By",
+      accessor: (o: AggregatedOrder) => <span className="text-[#5c6e82]">{o.dealer_name}</span>,
+    },
+    {
+      header: "Target Delv",
+      accessor: (o: AggregatedOrder) => o.target_delivery_date ? new Date(o.target_delivery_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: AggregatedOrder) => o.target_delivery_date,
+      className: "whitespace-nowrap",
+    },
+    {
+      header: "Deal Stage",
+      accessor: (o: AggregatedOrder) => <CommercialStatusCell status={o.commercial_status} />,
+    },
+    {
+      header: "Next Action",
+      accessor: (o: AggregatedOrder) => (
+        <Badge variant="outline" className={o.nextAction === "—" ? "bg-muted text-muted-foreground" : "bg-amber-500/15 text-amber-700 border-amber-500/20"}>
+          {o.nextAction}
+        </Badge>
+      ),
+    },
+    {
+      header: "Qty",
+      accessor: (o: AggregatedOrder) => <span className="text-[#5c6e82]">{o.atw} / {o.total_windows}</span>,
+    },
+    {
+      header: "Sq Ft",
+      accessor: (o: AggregatedOrder) => <span className="text-[#5c6e82]">{o.sqft || "—"}</span>,
+    },
+    {
+      header: "Opportunity Value",
+      accessor: (o: AggregatedOrder) => <span className="text-[#5c6e82]">₹{Number(o.order_value).toLocaleString()}</span>,
+    },
+    {
+      header: "Receipt",
+      accessor: (o: AggregatedOrder) => <span className="text-emerald-600 font-medium">₹{Number(o.receipt).toLocaleString()}</span>,
+    },
+    {
+      header: "Balance",
+      accessor: (o: AggregatedOrder) => {
+        return <span className={o.balance > 0 ? "text-amber-600 font-medium" : "text-emerald-600 font-medium"}>₹{Number(o.balance).toLocaleString()}</span>;
+      },
+    },
+    {
+      header: "Survey",
+      accessor: (o: AggregatedOrder) => <StatusCell done={o.surveyDone} total={o.total_windows} />,
+    },
+    {
+      header: "Design",
+      accessor: (o: AggregatedOrder) => <StatusCell done={o.designReleased} total={o.surveyDone} />,
+    },
+    {
+      header: "Materials",
+      accessor: (o: AggregatedOrder) => <MaterialsStatusDetail o={o} />,
+    },
+    {
+      header: "Production",
+      accessor: (o: AggregatedOrder) => <StatusCell done={o.productionPacked} total={o.atw} />,
+    },
+    {
+      header: "Dispatch",
+      accessor: (o: AggregatedOrder) => <StatusCell done={o.dispatchedWindows} total={o.atw} />,
+    },
+    {
+      header: "Install",
+      accessor: (o: AggregatedOrder) => <StatusCell done={o.installedWindows} total={o.dispatchedWindows} />,
+    },
+    {
+      header: "Rework",
+      accessor: (o: AggregatedOrder) => <ReworkDot open={o.reworkOpenCount} total={o.reworkTotalCount} />,
+    },
+    {
+      header: "TAT Date",
+      accessor: (o: AggregatedOrder) => o.tat_date ? new Date(o.tat_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: AggregatedOrder) => o.tat_date,
+      className: "whitespace-nowrap text-blue-600 font-medium",
+    },
+    {
+      header: "Dispatch Date",
+      accessor: (o: AggregatedOrder) => o.dispatch_date ? new Date(o.dispatch_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: AggregatedOrder) => o.dispatch_date,
+      className: "whitespace-nowrap text-emerald-600 font-medium",
+    },
+    {
+      header: "Order Date",
+      accessor: (o: AggregatedOrder) => o.order_date ? new Date(o.order_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: AggregatedOrder) => o.order_date,
+      className: "whitespace-nowrap",
+    },
+    {
+      header: "Default Quote",
+      accessor: (o: AggregatedOrder) => o.quote_no || "—",
+      className: "text-[#5c6e82]"
+    },
+    {
+      header: "Sales Order",
+      accessor: (o: AggregatedOrder) => o.sales_order_no || "—",
+      className: "text-[#5c6e82]"
+    }
+  ];
+
+  const tabsConfig = [
+    { id: "open", label: "Open" },
+    { id: "partially_dispatched", label: "Partially Dispatched" },
+    { id: "completely_dispatched", label: "Completely Dispatched" },
+    { id: "completed", label: "Completed" },
+    { id: "all", label: "All Orders" },
+  ];
+
+  const renderTopRightActions = () => (
+    canEdit && (
+      <Button variant="outline" size="sm" className="h-8 text-blue-600 border-blue-200 bg-blue-50/50 hover:bg-blue-100/50 font-medium px-4" onClick={() => setDialogOpen(true)}>
+        <Plus className="h-4 w-4 mr-1" /> New Order
+      </Button>
+    )
+  );
+
   return (
-    <div className="p-6">
-      <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Global Orders</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Total {orders.length} orders across all stages
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {canEdit && (
-            <Button onClick={() => setDialogOpen(true)} className="bg-primary hover:bg-primary/90">
-              <Plus className="mr-2 h-4 w-4" /> New Order
-            </Button>
-          )}
-
-          <Button variant="outline" onClick={handleExportFull}>
-            <Download className="mr-2 h-4 w-4" /> Full Data Export
-          </Button>
-
-          <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing}>
-            <Upload className="mr-2 h-4 w-4" /> Import Orders
-          </Button>
-
-          <Button variant="outline" onClick={downloadImportTemplate}>
-            <FileSpreadsheet className="mr-2 h-4 w-4" /> Template
-          </Button>
-
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleImport}
-            accept=".xlsx,.xls,.csv"
-            className="hidden"
-          />
-        </div>
-      </div>
-
-      {/* Search + Filters */}
-      <div className="mb-4 flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search quotation, order name, owner..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button size="sm" variant="outline" className="gap-1.5">
-              <Filter className="h-4 w-4" />
-              Filters
-              {activeFilterCount > 0 && (
-                <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs rounded-full">
-                  {activeFilterCount}
-                </Badge>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-72 space-y-3" align="start">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Filters</span>
-              {activeFilterCount > 0 && (
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setFilters(emptyFilters)}>
-                  <X className="h-3 w-3 mr-1" /> Clear
-                </Button>
-              )}
+    <div className="flex-1 w-full bg-white flex flex-col h-[calc(100vh-64px)]">
+      <DataTableLayout
+        tabs={tabsConfig}
+        activeTab={tab}
+        onTabChange={setTab}
+        searchValue={search}
+        onSearch={setSearch}
+        activeFilterCount={activeFilterCount}
+        activeFilters={activeFilters}
+        onRemoveFilter={(key) => setFilters(prev => ({ ...prev, [key]: "" }))}
+        onClearFilters={() => setFilters(emptyFilters)}
+        columns={columns}
+        data={filtered}
+        getRowId={(o) => o.id}
+        renderTopRightActions={renderTopRightActions}
+        onTemplate={downloadImportTemplate}
+        onImport={() => fileInputRef.current?.click()}
+        onExport={handleExportFull}
+        filterChildren={
+          <div className="space-y-6">
+            <FilterSelect label="Managed By" value={filters.managedBy} options={owners} onChange={(v) => setFilters(p => ({ ...p, managedBy: v }))} />
+            <FilterSelect label="Next Action" value={filters.nextAction} options={nextActions} onChange={(v) => setFilters(p => ({ ...p, nextAction: v }))} />
+            
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground uppercase font-semibold">Materials Status</label>
+              <Select value={filters.materialsStatus || "all"} onValueChange={(v) => setFilters(p => ({ ...p, materialsStatus: v === "all" ? "" : v }))}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                   <SelectItem value="all">All Status</SelectItem>
+                   <SelectItem value="Ready">Ready</SelectItem>
+                   <SelectItem value="Partial">Partial</SelectItem>
+                   <SelectItem value="Pending">Pending</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <FilterSelect label="Salesperson" value={filters.salesperson} options={salespersons} onChange={(v) => setFilters({ ...filters, salesperson: v })} />
-            <FilterSelect label="Owner" value={filters.orderOwner} options={owners} onChange={(v) => setFilters({ ...filters, orderOwner: v })} />
-            <FilterSelect label="Order Type" value={filters.orderType} options={["Supply", "Supply + Install", "Service"]} onChange={(v) => setFilters({ ...filters, orderType: v })} />
-            <FilterSelect label="Prod. Approval" value={filters.approvalProduction} options={["Pending", "Approved", "Hold"]} onChange={(v) => setFilters({ ...filters, approvalProduction: v })} />
-          </PopoverContent>
-        </Popover>
-      </div>
 
-      {/* Tabs */}
-      <Tabs value={tab} onValueChange={setTab} className="mb-4">
-        <TabsList>
-          <TabsTrigger value="open">Open</TabsTrigger>
-          <TabsTrigger value="partially_dispatched">Partially Dispatched</TabsTrigger>
-          <TabsTrigger value="completely_dispatched">Completely Dispatched</TabsTrigger>
-          <TabsTrigger value="completed">Completed</TabsTrigger>
-          <TabsTrigger value="all">All Orders</TabsTrigger>
-        </TabsList>
-      </Tabs>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground uppercase font-semibold">Dispatch Status</label>
+              <Select value={filters.dispatchLabel || "all"} onValueChange={(v) => setFilters(p => ({ ...p, dispatchLabel: v === "all" ? "" : v }))}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                   <SelectItem value="all">All Status</SelectItem>
+                   <SelectItem value="Fully Dispatched">Fully Dispatched</SelectItem>
+                   <SelectItem value="Partially Dispatched">Partially Dispatched</SelectItem>
+                   <SelectItem value="Not Dispatched">Not Dispatched</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-      {/* Table */}
-      <div className="rounded-md border bg-card overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="min-w-[100px]">Quotation No</TableHead>
-              <TableHead className="min-w-[80px]">SO No</TableHead>
-              <TableHead className="min-w-[140px]">Order Name</TableHead>
-              <TableHead className="min-w-[80px]">Type</TableHead>
-              <TableHead className="min-w-[110px]">Owner</TableHead>
-              <TableHead className="min-w-[100px]">Salesperson</TableHead>
-              <TableHead className="min-w-[100px]">Shade</TableHead>
-              <TableHead className="min-w-[130px]">Product Type</TableHead>
-              <TableHead className="text-right min-w-[60px]">Win</TableHead>
-              <TableHead className="text-right min-w-[50px]">ATW</TableHead>
-              <TableHead className="text-right min-w-[90px]">Order Value</TableHead>
-              <TableHead className="text-right min-w-[75px]">Receipt</TableHead>
-              <TableHead className="text-right min-w-[75px]">Balance</TableHead>
-              <TableHead className="min-w-[120px]">Commercial Status</TableHead>
-              <TableHead className="min-w-[100px]">Prod. Appr</TableHead>
-              <TableHead className="min-w-[100px]">Disp. Appr</TableHead>
-              <TableHead className="min-w-[70px]">Survey</TableHead>
-              <TableHead className="min-w-[70px]">Design</TableHead>
-              <TableHead className="min-w-[90px]">Materials</TableHead>
-              <TableHead className="min-w-[80px]">Production</TableHead>
-              <TableHead className="min-w-[80px]">Dispatch</TableHead>
-              <TableHead className="min-w-[80px]">Install</TableHead>
-              <TableHead className="min-w-[70px]">Rework</TableHead>
-              <TableHead className="min-w-[100px]">Next Action</TableHead>
-              {canEdit && <TableHead className="w-10" />}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={canEdit ? 25 : 24} className="text-center py-8 text-muted-foreground">Loading...</TableCell>
-              </TableRow>
-            ) : filtered.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={canEdit ? 25 : 24} className="text-center py-8 text-muted-foreground">No orders found</TableCell>
-              </TableRow>
-            ) : (
-              filtered.map((o) => (
-                <TableRow key={o.id} className="hover:bg-muted/50">
-                  <TableCell className="text-sm">{o.quote_no || "—"}</TableCell>
-                  <TableCell className="text-sm">{o.sales_order_no || "—"}</TableCell>
-                  <TableCell>
-                    <Link to={`/orders/${o.id}`} className="font-medium text-primary hover:underline">{o.order_name}</Link>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="text-xs">{o.order_type}</Badge>
-                  </TableCell>
-                  <TableCell className="text-sm truncate max-w-[120px]">{o.dealer_name}</TableCell>
-                  <TableCell className="text-sm">{o.salesperson || "—"}</TableCell>
-                  <TableCell className="text-sm">{o.colour_shade || "—"}</TableCell>
-                  <TableCell className="text-sm truncate max-w-[140px]" title={o.product_type}>{o.product_type}</TableCell>
-                  <TableCell className="text-right">{o.total_windows}</TableCell>
-                  <TableCell className="text-right font-medium">{o.atw}</TableCell>
-                  <TableCell className="text-right font-medium">₹{Number(o.order_value).toLocaleString()}</TableCell>
-                  <TableCell className="text-right">₹{o.receipt.toLocaleString()}</TableCell>
-                  <TableCell className="text-right">₹{o.balance.toLocaleString()}</TableCell>
-                  <TableCell>
-                    <CommercialStatusCell status={o.commercial_status} />
-                  </TableCell>
-                  <TableCell>
-                    <ApprovalCell status={o.approval_for_production} />
-                  </TableCell>
-                  <TableCell>
-                    <ApprovalCell status={o.approval_for_dispatch} />
-                  </TableCell>
-                  {/* Survey: done / total_windows */}
-                  <TableCell><StatusCell done={o.surveyDone} total={o.total_windows} /></TableCell>
-                  {/* Design: released / survey_done */}
-                  <TableCell><StatusCell done={o.designReleased} total={o.surveyDone} /></TableCell>
-                  {/* Materials */}
-                  <TableCell><MaterialsStatusDetail o={o} /></TableCell>
-                  {/* Production: packed / atw */}
-                  <TableCell><StatusCell done={o.productionPacked} total={o.atw} /></TableCell>
-                  {/* Dispatch: dispatched / atw */}
-                  <TableCell><StatusCell done={o.dispatchedWindows} total={o.atw} /></TableCell>
-                  {/* Installation: installed / dispatched */}
-                  <TableCell><StatusCell done={o.installedWindows} total={o.dispatchedWindows} /></TableCell>
-                  {/* Rework */}
-                  <TableCell><ReworkDot open={o.reworkOpenCount} total={o.reworkTotalCount} /></TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className={o.nextAction === "—" ? "bg-muted text-muted-foreground" : "bg-amber-500/15 text-amber-700 border-amber-500/20"}>
-                      {o.nextAction}
-                    </Badge>
-                  </TableCell>
-                  {canEdit && (
-                    <TableCell>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); setEditOrder(o); }}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground uppercase font-semibold">Order Type</label>
+              <Select value={filters.orderType || "all"} onValueChange={(v) => setFilters(p => ({ ...p, orderType: v === "all" ? "" : v }))}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                   <SelectItem value="all">All Types</SelectItem>
+                   <SelectItem value="Retail">Retail</SelectItem>
+                   <SelectItem value="Project">Project</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground uppercase font-semibold">Deal Stage</label>
+              <Select value={filters.dealStage || "all"} onValueChange={(v) => setFilters(p => ({ ...p, dealStage: v === "all" ? "" : v }))}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                   <SelectItem value="all">All Stages</SelectItem>
+                   <SelectItem value="Confirmed">Confirmed</SelectItem>
+                   <SelectItem value="Pipeline">Pipeline</SelectItem>
+                   <SelectItem value="Hold">Hold</SelectItem>
+                   <SelectItem value="Cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        }
+        renderRowAction={(o) => (
+          canEdit ? (
+            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground/40 hover:text-foreground hover:bg-slate-200 rounded transition-colors shrink-0 opacity-0 group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditOrder(o); }}>
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          ) : undefined
+        )}
+      />
 
+      <input type="file" ref={fileInputRef} onChange={handleImport} accept=".xlsx,.xls,.csv" className="hidden" />
+
+      {/* Legacy layout wrapper dialogs */}
       <CreateOrderDialog open={dialogOpen} onOpenChange={setDialogOpen} onCreated={fetchAll} />
-      <EditOrderDialog open={!!editOrder} onOpenChange={(v) => { if (!v) setEditOrder(null); }} onUpdated={fetchAll} order={editOrder} />
+      {editOrder && (
+        <EditOrderDialog
+          order={editOrder}
+          open={!!editOrder}
+          onOpenChange={(open) => { if (!open) setEditOrder(null); }}
+          onUpdated={fetchAll}
+        />
+      )}
     </div>
   );
 }

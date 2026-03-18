@@ -82,9 +82,9 @@ export default function OrderDetailPage() {
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div className="space-y-1">
-          <Link to="/" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-2">
-            <ArrowLeft className="h-4 w-4" /> Back to Orders
-          </Link>
+          <button onClick={() => window.history.back()} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-2">
+            <ArrowLeft className="h-4 w-4" /> Back
+          </button>
           <h1 className="text-3xl font-bold tracking-tight">{order.order_name}</h1>
           <p className="text-muted-foreground">{order.dealer_name}</p>
         </div>
@@ -184,6 +184,32 @@ export default function OrderDetailPage() {
                 />
               </div>
               <div className="space-y-2">
+                <Label>TAT Date</Label>
+                <Input
+                  type="date"
+                  defaultValue={order.tat_date ? new Date(order.tat_date).toISOString().split('T')[0] : ""}
+                  readOnly={!canEdit(["sales", "design"])}
+                  className={!canEdit(["sales", "design"]) ? "bg-muted" : ""}
+                  onBlur={(e) => {
+                    const val = e.target.value;
+                    if (val !== (order.tat_date ? new Date(order.tat_date).toISOString().split('T')[0] : "")) updateOrder("tat_date", val);
+                  }}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Target Delivery Date</Label>
+                <Input
+                  type="date"
+                  defaultValue={order.target_delivery_date ? new Date(order.target_delivery_date).toISOString().split('T')[0] : ""}
+                  readOnly={!canEdit(["sales", "design"])}
+                  className={!canEdit(["sales", "design"]) ? "bg-muted" : ""}
+                  onBlur={(e) => {
+                    const val = e.target.value;
+                    if (val !== (order.target_delivery_date ? new Date(order.target_delivery_date).toISOString().split('T')[0] : "")) updateOrder("target_delivery_date", val);
+                  }}
+                />
+              </div>
+              <div className="space-y-2">
                 <Label>Advance Received (₹)</Label>
                 <Input
                   type="number"
@@ -249,7 +275,7 @@ export default function OrderDetailPage() {
         </TabsContent>
 
         <TabsContent value="rework" className="mt-4">
-          <ReworkSection orderId={id!} order={order} onRefresh={fetchAll} readOnly={!canEdit(["production", "installation", "design"])} />
+          <ReworkSection orderId={id!} order={order} onRefresh={fetchAll} readOnly={!canEdit(["production", "installation", "design", "rework"])} />
         </TabsContent>
       </Tabs>
     </div>

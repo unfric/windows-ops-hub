@@ -17,6 +17,8 @@ import {
 import { Search, Filter, X, Download } from "lucide-react";
 import { toast } from "sonner";
 import { exportDataToExcel } from "@/lib/excelUtils";
+import DataTableLayout from "@/components/ui/data-table-layout";
+import { cn } from "@/lib/utils";
 
 interface Order {
   id: string;
@@ -41,6 +43,10 @@ interface Order {
   coating_delivery_date: string | null;
   procurement_remarks: string | null;
   design_released_windows: number;
+  order_date: string | null;
+  tat_date: string | null;
+  target_delivery_date: string | null;
+  dispatch_date: string | null;
 }
 
 interface Filters {
@@ -135,17 +141,31 @@ export default function ProcurementPage() {
     return true;
   });
 
-  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+  const activeFilters = Object.entries(filters)
+    .filter(([_, v]) => v)
+    .map(([k, v]) => ({
+      key: k,
+      label: k === "orderOwner" ? "Owner" : k.charAt(0).toUpperCase() + k.slice(1),
+      value: v
+    }));
+
+  const activeFilterCount = activeFilters.length;
 
   const handleExport = () => {
     const headers = [
-      "Order", "Owner", "Salesperson", "Hardware PO", "Extrusion PO", "Glass PO", "Coating",
+      "Order", "Owner", "Salesperson", 
+      "Order Date", "TAT Date", "Target Delv", "Disp Date",
+      "Hardware PO", "Extrusion PO", "Glass PO", "Coating",
       "H-Deliv", "E-Deliv", "G-Deliv", "C-Deliv", "Remarks"
     ];
     const data = filtered.map(o => ({
       "Order": o.order_name,
       "Owner": o.dealer_name,
       "Salesperson": o.salesperson || "",
+      "Order Date": o.order_date || "",
+      "TAT Date": o.tat_date || "",
+      "Target Delv": o.target_delivery_date || "",
+      "Disp Date": o.dispatch_date || "",
       "Hardware PO": o.hardware_po_status,
       "Extrusion PO": o.extrusion_po_status,
       "Glass PO": o.glass_po_status,
@@ -159,117 +179,129 @@ export default function ProcurementPage() {
     exportDataToExcel(data, headers, `procurement_export_${tab}.xlsx`);
   };
 
+  const columns = [
+    {
+      header: "Project Name",
+      accessor: (o: Order) => (
+        <div className="flex flex-col">
+          <Link to={`/orders/${o.id}`} className="font-medium text-blue-600 hover:underline">{o.order_name}</Link>
+          <span className="text-[10px] text-muted-foreground uppercase">{o.order_type}</span>
+        </div>
+      ),
+      className: "min-w-[180px]"
+    },
+    {
+      header: "Order Date",
+      accessor: (o: Order) => o.order_date ? new Date(o.order_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: Order) => o.order_date,
+      className: "whitespace-nowrap",
+    },
+    {
+      header: "TAT Date",
+      accessor: (o: Order) => o.tat_date ? new Date(o.tat_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: Order) => o.tat_date,
+      className: "whitespace-nowrap text-blue-600 font-medium",
+    },
+    {
+      header: "Target Delv",
+      accessor: (o: Order) => o.target_delivery_date ? new Date(o.target_delivery_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: Order) => o.target_delivery_date,
+      className: "whitespace-nowrap",
+    },
+    {
+      header: "Dispatch Date",
+      accessor: (o: Order) => o.dispatch_date ? new Date(o.dispatch_date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short' }) : "—",
+      sortValue: (o: Order) => o.dispatch_date,
+      className: "whitespace-nowrap text-emerald-600 font-medium",
+    },
+    {
+      header: "Managed By",
+      accessor: (o: Order) => <span className="text-[#5c6e82]">{o.dealer_name}</span>,
+    },
+    {
+      header: "Salesperson",
+      accessor: (o: Order) => <span className="text-[#5c6e82]">{o.salesperson || "—"}</span>,
+    },
+    {
+      header: "Shade",
+      accessor: (o: Order) => <span className="text-[#5c6e82]">{o.colour_shade || "—"}</span>,
+    },
+    {
+      header: "Qty",
+      accessor: (o: Order) => <span className="text-[#5c6e82] whitespace-nowrap">{o.design_released_windows} / {o.total_windows}</span>,
+      className: "whitespace-nowrap",
+    },
+    {
+      header: "Hardware PO",
+      accessor: (o: Order) => (
+        <Badge variant="outline" className={cn("text-[10px] uppercase font-semibold", poColor(o.hardware_po_status))}>
+          {formatPoDisplay(o.hardware_po_status, o.hardware_delivery_date)}
+        </Badge>
+      ),
+    },
+    {
+      header: "Extrusion PO",
+      accessor: (o: Order) => (
+        <Badge variant="outline" className={cn("text-[10px] uppercase font-semibold", poColor(o.extrusion_po_status))}>
+          {formatPoDisplay(o.extrusion_po_status, o.extrusion_delivery_date)}
+        </Badge>
+      ),
+    },
+    {
+      header: "Glass PO",
+      accessor: (o: Order) => (
+        <Badge variant="outline" className={cn("text-[10px] uppercase font-semibold", poColor(o.glass_po_status))}>
+          {formatPoDisplay(o.glass_po_status, o.glass_delivery_date)}
+        </Badge>
+      ),
+    },
+    {
+      header: "Sent to Coating",
+      accessor: (o: Order) => (
+        <Badge variant="outline" className={cn("text-[10px] uppercase font-semibold", poColor(o.coating_status))}>
+          {formatPoDisplay(o.coating_status, o.coating_delivery_date)}
+        </Badge>
+      ),
+    },
+    {
+      header: "Remarks",
+      accessor: (o: Order) => <span className="text-[#5c6e82] max-w-[120px] truncate block" title={o.procurement_remarks || ""}>{o.procurement_remarks || "—"}</span>,
+    }
+  ];
+
+  const tabsConfig = [
+    { id: "po_pending", label: "PO Pending" },
+    { id: "delivery_pending", label: "Delivery Pending" },
+    { id: "completed", label: "Completed" },
+    { id: "all", label: "All Orders" },
+  ];
+
+
   return (
-    <div className="p-6">
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Procurement</h1>
-          <p className="text-sm text-muted-foreground">{orders.length} total orders</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={handleExport}>
-            <Download className="h-4 w-4" /> Export
-          </Button>
-        </div>
-      </div>
-
-      <div className="mb-4 flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search by name, owner, quotation..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button size="sm" variant="outline" className="gap-1.5">
-              <Filter className="h-4 w-4" />
-              Filters
-              {activeFilterCount > 0 && (
-                <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs rounded-full">
-                  {activeFilterCount}
-                </Badge>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-72 space-y-3" align="start">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Filters</span>
-              {activeFilterCount > 0 && (
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setFilters(emptyFilters)}>
-                  <X className="h-3 w-3 mr-1" /> Clear
-                </Button>
-              )}
-            </div>
-            <FilterSelect label="Salesperson" value={filters.salesperson} options={salespersons} onChange={(v) => setFilters({ ...filters, salesperson: v })} />
-            <FilterSelect label="Order Owner" value={filters.orderOwner} options={owners} onChange={(v) => setFilters({ ...filters, orderOwner: v })} />
-          </PopoverContent>
-        </Popover>
-      </div>
-
-      <Tabs value={tab} onValueChange={setTab} className="mb-4">
-        <TabsList>
-          <TabsTrigger value="po_pending">PO Pending</TabsTrigger>
-          <TabsTrigger value="delivery_pending">Delivery Pending</TabsTrigger>
-          <TabsTrigger value="completed">Completed</TabsTrigger>
-          <TabsTrigger value="all">All Orders</TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      <div className="rounded-md border bg-card overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="min-w-[80px]">Type</TableHead>
-              <TableHead className="min-w-[140px]">Order Name</TableHead>
-              <TableHead className="min-w-[120px]">Owner</TableHead>
-              <TableHead className="min-w-[100px]">Quotation No</TableHead>
-              <TableHead className="min-w-[80px]">SO No</TableHead>
-              <TableHead className="min-w-[100px]">Shade</TableHead>
-              <TableHead className="min-w-[100px]">Salesperson</TableHead>
-              <TableHead className="min-w-[140px]">Product Type</TableHead>
-              <TableHead className="text-right min-w-[60px]">Windows</TableHead>
-              <TableHead className="text-right min-w-[70px]">Avl to Work</TableHead>
-              <TableHead className="text-right min-w-[60px]">Sqft</TableHead>
-              <TableHead className="text-right min-w-[90px]">Order Value</TableHead>
-              <TableHead className="min-w-[100px]">Hardware PO</TableHead>
-              <TableHead className="min-w-[100px]">Extrusion PO</TableHead>
-              <TableHead className="min-w-[100px]">Glass PO</TableHead>
-              <TableHead className="min-w-[120px]">Sent to Coating</TableHead>
-              <TableHead className="min-w-[120px]">Remarks</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow><TableCell colSpan={17} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
-            ) : filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={17} className="text-center py-8 text-muted-foreground">No orders found</TableCell></TableRow>
-            ) : (
-              filtered.map((order) => (
-                <TableRow key={order.id} className="hover:bg-muted/50">
-                  <TableCell><Badge variant="outline" className="text-xs">{order.order_type}</Badge></TableCell>
-                  <TableCell>
-                    <Link to={`/orders/${order.id}`} className="font-medium text-primary hover:underline">{order.order_name}</Link>
-                  </TableCell>
-                  <TableCell className="text-sm">{order.dealer_name}</TableCell>
-                  <TableCell className="text-sm">{order.quote_no || "—"}</TableCell>
-                  <TableCell className="text-sm">{order.sales_order_no || "—"}</TableCell>
-                  <TableCell className="text-sm">{order.colour_shade || "—"}</TableCell>
-                  <TableCell className="text-sm">{order.salesperson || "—"}</TableCell>
-                  <TableCell className="text-sm max-w-[180px] truncate" title={order.product_type}>{order.product_type}</TableCell>
-                  <TableCell className="text-right">{order.total_windows}</TableCell>
-                  <TableCell className="text-right">{order.design_released_windows}</TableCell>
-                  <TableCell className="text-right">{Number(order.sqft).toFixed(1)}</TableCell>
-                  <TableCell className="text-right font-medium">₹{Number(order.order_value).toLocaleString()}</TableCell>
-                  <TableCell><Badge variant="outline" className={`text-xs ${poColor(order.hardware_po_status)}`}>{formatPoDisplay(order.hardware_po_status, order.hardware_delivery_date)}</Badge></TableCell>
-                  <TableCell><Badge variant="outline" className={`text-xs ${poColor(order.extrusion_po_status)}`}>{formatPoDisplay(order.extrusion_po_status, order.extrusion_delivery_date)}</Badge></TableCell>
-                  <TableCell><Badge variant="outline" className={`text-xs ${poColor(order.glass_po_status)}`}>{formatPoDisplay(order.glass_po_status, order.glass_delivery_date)}</Badge></TableCell>
-                  <TableCell><Badge variant="outline" className={`text-xs ${poColor(order.coating_status)}`}>{formatPoDisplay(order.coating_status, order.coating_delivery_date)}</Badge></TableCell>
-                  <TableCell className="text-sm max-w-[120px] truncate" title={order.procurement_remarks || ""}>{order.procurement_remarks || "—"}</TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+    <div className="flex-1 w-full bg-white flex flex-col h-[calc(100vh-64px)]">
+      <DataTableLayout
+        moduleName="procurement"
+        title="Procurement"
+        tabs={tabsConfig}
+        activeTab={tab}
+        onTabChange={setTab}
+        searchValue={search}
+        onSearch={setSearch}
+        activeFilterCount={activeFilterCount}
+        activeFilters={activeFilters}
+        onRemoveFilter={(key) => setFilters(prev => ({ ...prev, [key]: "" }))}
+        onClearFilters={() => setFilters(emptyFilters)}
+        columns={columns}
+        data={filtered}
+        getRowId={(o) => o.id}
+        onExport={handleExport}
+        filterChildren={
+          <div className="space-y-4">
+            <FilterSelect label="Salesperson" value={filters.salesperson} options={salespersons} onChange={(v) => setFilters(p => ({ ...p, salesperson: v }))} />
+            <FilterSelect label="Order Owner" value={filters.orderOwner} options={owners} onChange={(v) => setFilters(p => ({ ...p, orderOwner: v }))} />
+          </div>
+        }
+      />
     </div>
   );
 }
